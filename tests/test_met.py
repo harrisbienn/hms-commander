@@ -200,6 +200,33 @@ class TestSetPrecipitation:
             {"dss_file": "aorc_test.dss", "dss_pathname": dss_pathname}
         ]
 
+    def test_gridded_precipitation_updates_hms4_method_parameters(self, tmp_path):
+        met_path = _write_synthetic_met(
+            tmp_path / "modern_grid.met",
+            precipitation_method="Gridded Precipitation",
+            subbasins=(),
+        )
+        content = met_path.read_text(encoding="utf-8")
+        content += (
+            "\nPrecip Method Parameters: Gridded Precipitation\n"
+            "     Last Modified Date: 1 January 2024\n"
+            "     Precip Grid Name: Baseline_Grid\n"
+            "End:\n"
+        )
+        met_path.write_text(content, encoding="utf-8")
+
+        summary = HmsMet.set_precipitation(
+            met_path,
+            "Gridded Precipitation",
+            {"grid_name": "StormHub_Rank_001"},
+        )
+
+        rewritten = met_path.read_text(encoding="utf-8")
+        assert summary["grid_name"] == "StormHub_Rank_001"
+        assert "     Precip Grid Name: StormHub_Rank_001" in rewritten
+        assert "Precipitation Grid:" not in rewritten
+        assert "DSS File Name:" not in rewritten
+
     def test_empty_precipitation_round_trip(self, tmp_path):
         met_path = _write_synthetic_met(
             tmp_path / "empty_roundtrip.met",

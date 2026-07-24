@@ -1059,16 +1059,42 @@ End:
         content: str,
         precip_data: Mapping[str, Any]
     ) -> tuple[str, Dict[str, Any]]:
-        """Set gridded precipitation references in the Meteorology block."""
+        """Set a gridded precipitation reference using the file's native grammar.
+
+        HMS 4.x projects normally store ``Precip Grid Name`` in a
+        ``Precip Method Parameters: Gridded Precipitation`` block and keep the
+        external DSS file/pathname in the project ``.grid`` file.  Historical
+        hms-commander fixtures used ``Precipitation Grid`` plus DSS references
+        directly in the main ``Meteorology`` block.  Preserve that legacy form
+        when no method-parameters block exists, while updating modern projects
+        in place.
+        """
         grid_name = precip_data.get('grid_name', precip_data.get('precipitation_grid'))
         if grid_name is None or str(grid_name).strip() == '':
             raise ValueError("Gridded precipitation requires a non-empty 'grid_name'")
 
-        content = HmsMet._set_meteorology_parameter(
+        dss_pathname = precip_data.get('dss_pathname')
+        if dss_pathname is not None:
+            HmsMet._validate_dss_pathname(str(dss_pathname))
+
+        has_method_parameters = re.search(
+            r'^Precip Method Parameters:\s*Gridded Precipitation\s*$',
             content,
-            'Precipitation Grid',
-            str(grid_name)
-        )
+            re.IGNORECASE | re.MULTILINE,
+        ) is not None
+
+        if has_method_parameters:
+            content = HmsMet._set_precipitation_grid_parameter(
+                content,
+                str(grid_name),
+            )
+        else:
+            # Compatibility with older project grammars and existing callers.
+            content = HmsMet._set_meteorology_parameter(
+                content,
+                'Precipitation Grid',
+                str(grid_name)
+            )
         dss_refs = 0
 
         dss_file = precip_data.get('dss_file')
@@ -1080,9 +1106,7 @@ End:
             )
             dss_refs += 1
 
-        dss_pathname = precip_data.get('dss_pathname')
         if dss_pathname is not None:
-            HmsMet._validate_dss_pathname(str(dss_pathname))
             content = HmsMet._set_meteorology_parameter(
                 content,
                 'DSS Pathname',
@@ -1094,6 +1118,35 @@ End:
             'grid_name': str(grid_name),
             'dss_references_written': dss_refs,
         }
+
+    @staticmethod
+    def _set_precipitation_grid_parameter(content: str, grid_name: str) -> str:
+        """Update the HMS 4.x gridded-precipitation method-parameters block."""
+        pattern = re.compile(
+            r'(^Precip Method Parameters:\s*Gridded Precipitation\s*\n)'
+            r'(.*?)'
+            r'(^End:\s*$)',
+            re.IGNORECASE | re.MULTILINE | re.DOTALL,
+        )
+        match = pattern.search(content)
+        if not match:
+            raise ValueError(
+                "Gridded precipitation method-parameters block not found"
+            )
+
+        body = match.group(2)
+        attrs = HmsFileParser._parse_attribute_block(body)
+        key = HmsMet._select_existing_key(
+            attrs,
+            'Precip Grid Name',
+            'Precipitation Grid',
+        )
+        body, changed = HmsFileParser.update_parameter(body, key, grid_name)
+        if not changed:
+            body = HmsMet._append_block_parameter(body, key, grid_name)
+
+        replacement = match.group(1) + body + match.group(3)
+        return content[:match.start()] + replacement + content[match.end():]
 
     @staticmethod
     def _validate_dss_pathname(pathname: str) -> None:
