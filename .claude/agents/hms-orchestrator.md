@@ -109,7 +109,7 @@ Analyze incoming requests and categorize by domain:
 | HMS internals, decompilation, class files, HEC-HMS source code | (handle directly or delegate) | hms_investigate_internals |
 | HMS documentation, User's Manual, Technical Reference, release notes, official docs, method parameters | (handle directly or delegate) | hms_query_docs |
 | documentation, mkdocs, notebook, API docs, ReadTheDocs, GitHub Pages, example notebooks | documentation-generator | (no skill activation) |
-| environment, conda, pip, kernel, import error, module not found, setup environment, hmscmdr_local, hmscmdr_pip | python-environment-manager | (no skill activation) |
+| environment, conda, pip, kernel, import error, module not found, setup environment, hms, hmscmdr_pip | python-environment-manager | (no skill activation) |
 | Claude Code, SKILL.md, memory hierarchy, imports, skills creation, official Anthropic docs | claude-code-guide | (no skill activation) |
 | example notebooks, ipynb, notebook conventions, notebook QA, which notebook shows | example-notebook-librarian | (no skill activation) |
 | run notebook, execute ipynb, nbmake, notebook test, failing notebook, traceback | notebook-runner | (no skill activation) |

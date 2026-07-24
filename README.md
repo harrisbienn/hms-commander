@@ -117,7 +117,7 @@ That workflow is now import-valid and compute-valid, but it is not yet productio
 
 ```bash
 # Create conda environment (recommended)
-conda create -n hms python=3.11
+conda create -n hms python=3.12
 conda activate hms
 
 # Install hms-commander
@@ -148,8 +148,8 @@ git clone https://github.com/gpt-cmdr/hms-commander.git
 cd hms-commander
 
 # Create development environment
-conda create -n hmscmdr_local python=3.11
-conda activate hmscmdr_local
+conda create -n hms python=3.12
+conda activate hms
 
 # Install in editable mode with all dependencies
 pip install -e ".[all]"

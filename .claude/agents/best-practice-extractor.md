@@ -139,7 +139,7 @@ SUCCESS_INDICATORS = [
 **Testing Patterns**:
 - TDD with real HMS projects
 - HmsExamples usage
-- Environment testing (hmscmdr_local vs hmscmdr_pip)
+- Environment testing (hms vs hmscmdr_pip)
 - No mocks approach
 - Edge case coverage
 
@@ -476,9 +476,9 @@ def validate_practices(practices):
 **Environment Testing**:
 ```json
 {
-  "practice": "Test code changes in hmscmdr_local, validate published package in hmscmdr_pip",
+  "practice": "Test code changes in hms, validate published package in hmscmdr_pip",
   "category": "testing_patterns",
-  "evidence": "hmscmdr_local uses editable install for development. hmscmdr_pip tests published package before release.",
+  "evidence": "hms uses editable install for development. hmscmdr_pip tests published package before release.",
   "actionability": 5
 }
 ```

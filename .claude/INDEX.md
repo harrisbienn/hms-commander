@@ -79,7 +79,7 @@ The `.claude/` directory contains the Claude-native hierarchical knowledge frame
 | Agent | Domain | When to Use |
 |-------|--------|-------------|
 | **documentation-generator/** | MkDocs, notebooks, API docs | Creating tutorials, updating docs, notebook issues, mkdocs deployment |
-| **python-environment-manager.md** | Python environments | Environment setup, import errors, Jupyter kernels, hmscmdr_local/hmscmdr_pip |
+| **python-environment-manager.md** | Python environments | Environment setup, import errors, Jupyter kernels, hms/hmscmdr_pip |
 | **claude-code-guide/** | Claude Code configuration | Skills creation, memory hierarchy, CLAUDE.md organization, official docs |
 | **hierarchical-knowledge-curator/** | Knowledge architecture | Memory consolidation, .claude/outputs curation, governance rules |
 | **example-notebook-librarian.md** | Example notebooks | Notebook navigation, QA/QC, authoring assistance, which notebook shows X |

@@ -213,7 +213,7 @@ Notebook executed successfully. No action needed.
 - Wrong Python version
 
 **Fixes**:
-- Activate correct conda environment (`hmscmdr_local`)
+- Activate correct conda environment (`hms`)
 - Install dependencies (`pip install -e ".[all]"`)
 - Check Python version (requires 3.10+)
 
@@ -323,7 +323,7 @@ ModuleNotFoundError: No module named 'hms_commander'
 - **Message**: No module named 'hms_commander'
 - **Cell Source**: `from hms_commander import HmsExamples`
 - **Likely Cause**: hms-commander not installed in current environment
-- **Suggested Fix**: Run `pip install -e ".[all]"` or activate `hmscmdr_local` environment
+- **Suggested Fix**: Run `pip install -e ".[all]"` or activate `hms` environment
 - **Category**: Environment Issues
 ```
 

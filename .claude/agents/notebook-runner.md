@@ -208,7 +208,7 @@ python -c "import hms_commander; print(hms_commander.__file__)"
 pip install -e ".[all]"
 
 # Or activate correct environment
-conda activate hmscmdr_local
+conda activate hms
 ```
 
 ### Pattern 2: Missing Example Projects

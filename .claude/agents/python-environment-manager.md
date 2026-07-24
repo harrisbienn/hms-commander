@@ -9,7 +9,7 @@ description: |
 
   Standard environments:
   - hmscmdr_pip (pip package) - for users NOT editing source
-  - hmscmdr_local (editable install) - for developers editing source
+  - hms (editable install) - for developers editing source
 ---
 
 # Python Environment Manager
@@ -27,7 +27,7 @@ description: |
 | Environment | Install Method | Use Case |
 |-------------|---------------|----------|
 | `hmscmdr_pip` | `pip install hms-commander` | Users NOT editing source code |
-| `hmscmdr_local` | `pip install -e ".[all]"` | Developers editing source code |
+| `hms` | `pip install -e ".[all]"` | Developers editing source code |
 
 **Why editable install**:
 - Changes to source code immediately reflected
@@ -44,7 +44,7 @@ description: |
 - Install: `pip install hms-commander`
 - Location: `.../anaconda3/envs/hmscmdr_pip/lib/python3.11/site-packages/hms_commander/`
 
-**Developer Environment**: `hmscmdr_local`
+**Developer Environment**: `hms`
 - Purpose: Edit source code and test changes
 - Install: `pip install -e ".[all]"` (from repository root)
 - Location: `C:\GH\hms-commander\hms_commander\`
@@ -74,14 +74,14 @@ python -c "import hms_commander; print(hms_commander.__file__)"
 # Should show: .../anaconda3/envs/hmscmdr_pip/.../hms_commander/...
 ```
 
-### Developer Environment (hmscmdr_local)
+### Developer Environment (hms)
 
 ```bash
 # Create environment
-conda create -n hmscmdr_local python=3.11 -y
+conda create -n hms python=3.12 -y
 
 # Activate
-conda activate hmscmdr_local
+conda activate hms
 
 # Navigate to repository
 cd C:\GH\hms-commander
@@ -91,7 +91,7 @@ pip install -e ".[all]"
 
 # Install Jupyter kernel
 pip install jupyter ipykernel
-python -m ipykernel install --user --name hmscmdr_local --display-name "Python (hmscmdr_local)"
+python -m ipykernel install --user --name hms --display-name "Python (hms)"
 
 # Verify
 python -c "import hms_commander; print(hms_commander.__file__)"
@@ -125,7 +125,7 @@ conda env list
 
 3. **Ask user about their intent**:
 - "Will you be editing hms-commander source code?"
-  - YES → Set up `hmscmdr_local`
+  - YES → Set up `hms`
   - NO → Set up `hmscmdr_pip`
 
 4. **Create appropriate environment** (see Setup Commands above)
@@ -147,7 +147,7 @@ HmsExamples.list_available_projects()
 jupyter kernelspec list
 ```
 
-Should show `hmscmdr_pip` or `hmscmdr_local` in the list.
+Should show `hmscmdr_pip` or `hms` in the list.
 
 ---
 
@@ -197,7 +197,7 @@ pip install hms-commander
 **Issue**: Changes not reflected (developer)
 ```bash
 # Verify editable install
-conda activate hmscmdr_local
+conda activate hms
 cd C:\GH\hms-commander
 pip show hms-commander
 # Should show: Location: c:\gh\hms-commander (editable)
@@ -210,9 +210,9 @@ pip install -e ".[all]"
 **Issue**: Dependency conflicts
 ```bash
 # Recreate environment
-conda remove -n hmscmdr_local --all -y
-conda create -n hmscmdr_local python=3.11 -y
-conda activate hmscmdr_local
+conda remove -n hms --all -y
+conda create -n hms python=3.12 -y
+conda activate hms
 cd C:\GH\hms-commander
 pip install -e ".[all]"
 ```
@@ -237,14 +237,14 @@ pip install hms-commander --upgrade
 python -c "import hms_commander; print(hms_commander.__version__)"
 ```
 
-**For hmscmdr_local (editable install)**:
+**For hms (editable install)**:
 ```bash
 # Pull latest code
 cd C:\GH\hms-commander
 git pull origin main
 
 # Reinstall dependencies (if pyproject.toml changed)
-conda activate hmscmdr_local
+conda activate hms
 pip install -e ".[all]" --upgrade
 
 # Verify
@@ -268,7 +268,7 @@ python -c "import hms_commander; print(hms_commander.__version__)"
 ```bash
 conda remove -n hmscmdr_pip --all -y
 # or
-conda remove -n hmscmdr_local --all -y
+conda remove -n hms --all -y
 ```
 
 3. **Recreate from scratch** (see Setup Commands)
@@ -379,7 +379,7 @@ print("\n" + "=" * 60)
 | `ImportError: DLL load failed` | Dependency issue (Windows) | Reinstall package with dependencies: `pip install -e ".[all]"` |
 | `AttributeError: module 'hms_commander' has no attribute 'X'` | Wrong version or outdated | Upgrade package: `pip install hms-commander --upgrade` |
 | Changes not reflected in Jupyter | Wrong kernel selected | Select correct kernel from dropdown |
-| Jupyter kernel not found | Kernel not installed | Run: `python -m ipykernel install --user --name hmscmdr_local` |
+| Jupyter kernel not found | Kernel not installed | Run: `python -m ipykernel install --user --name hms` |
 | `requires Python >=3.10` | Python version too old | Create new environment with Python 3.11 |
 | `Could not find a version that satisfies the requirement` | PyPI issue or dependency conflict | Check PyPI, or use `pip install -e .` for local |
 | Location shows site-packages but expected editable | Installed as standard, not editable | Reinstall: `pip uninstall hms-commander && pip install -e ".[all]"` |
@@ -401,7 +401,7 @@ Based on the diagnostic:
 - HMS Commander: [installed/not installed]
 
 Will you be editing hms-commander source code, or just using it?
-- If EDITING source: I'll set up `hmscmdr_local` (editable install)
+- If EDITING source: I'll set up `hms` (editable install)
 - If JUST USING: I'll set up `hmscmdr_pip` (published package)
 ```
 
@@ -431,7 +431,7 @@ Your Jupyter notebook is using the wrong Python environment. Here's how to fix i
 
 Option 1: Change kernel in current notebook
 1. Click "Kernel" → "Change Kernel" in Jupyter
-2. Select "Python (hmscmdr_local)" or "Python (hmscmdr_pip)"
+2. Select "Python (hms)" or "Python (hmscmdr_pip)"
 3. Re-run your cells
 
 Option 2: Install missing kernel
@@ -451,11 +451,11 @@ conda activate hmscmdr_pip
 pip install hms-commander --upgrade
 ```
 
-For editable environment (hmscmdr_local):
+For editable environment (hms):
 ```bash
 cd C:\GH\hms-commander
 git pull origin main
-conda activate hmscmdr_local
+conda activate hms
 pip install -e ".[all]" --upgrade
 ```
 
@@ -514,7 +514,7 @@ When working with both hms-commander and ras-commander:
 ### Separate Environments
 ```bash
 # HMS environments
-conda create -n hmscmdr_local python=3.11
+conda create -n hms python=3.12
 conda create -n hmscmdr_pip python=3.11
 
 # RAS environments

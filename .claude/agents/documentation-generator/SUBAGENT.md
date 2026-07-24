@@ -90,7 +90,7 @@ This notebook demonstrates basic HMS operations...
 # pip install hms-commander
 
 # Cell 3 (markdown - dev mode)
-# For development: Use hmscmdr_local conda environment
+# For development: Use hms conda environment
 
 # Cell 4 (code)
 from hms_commander import HmsExamples, init_hms_project
@@ -347,7 +347,7 @@ Brief description of what this demonstrates
 # pip install hms-commander
 
 # Cell 2 (markdown - dev mode)
-# For development: Use hmscmdr_local conda environment
+# For development: Use hms conda environment
 ```
 
 ### API Docs Not Updating

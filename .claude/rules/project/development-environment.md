@@ -44,16 +44,16 @@ python hms_agents/Update_3_to_4.py
 
 **Purpose**: Separate environments for local development vs published package testing.
 
-### Environment 1: `hmscmdr_local` (Local Development)
+### Environment 1: `hms` (Local Development)
 
 **Use when**: Making code changes in the repository, testing new features, debugging.
 
 ```bash
 # Create environment
-conda create -n hmscmdr_local python=3.11
+conda create -n hms python=3.12
 
 # Activate
-conda activate hmscmdr_local
+conda activate hms
 
 # Install local development version
 cd C:\GH\hms-commander
@@ -102,7 +102,7 @@ python -c "import hms_commander; print(hms_commander.__file__)"
 ### Workflow Selection
 
 **Making code changes**:
-1. Use `hmscmdr_local` environment
+1. Use `hms` environment
 2. Ensure editable install: `pip install -e ".[all]"`
 3. Launch Jupyter from environment: `jupyter lab`
 4. Test notebooks with live code changes
@@ -119,7 +119,7 @@ python -c "import hms_commander; print(hms_commander.__file__)"
 # Scenario: Testing new feature in basin operations
 
 # Step 1: Develop in local environment
-conda activate hmscmdr_local
+conda activate hms
 cd C:\GH\hms-commander
 jupyter lab
 
@@ -147,15 +147,15 @@ jupyter lab
 # List all conda environments
 conda env list
 
-# If hmscmdr_local or hmscmdr_pip not listed, create them
+# If hms or hmscmdr_pip not listed, create them
 ```
 
 ### Create Missing Environments
 
 ```bash
 # Prepare local development environment
-conda create -n hmscmdr_local python=3.11 -y
-conda activate hmscmdr_local
+conda create -n hms python=3.12 -y
+conda activate hms
 cd C:\GH\hms-commander
 pip install -e ".[all]"
 
@@ -176,7 +176,7 @@ print(f"Environment: {sys.prefix}")
 import hms_commander
 print(f"HMS Commander location: {hms_commander.__file__}")
 
-# For hmscmdr_local, should see: C:\GH\hms-commander\hms_commander
+# For hms, should see: C:\GH\hms-commander\hms_commander
 # For hmscmdr_pip, should see: ...\anaconda3\envs\hmscmdr_pip\...\hms_commander
 ```
 
@@ -189,7 +189,7 @@ print(f"HMS Commander location: {hms_commander.__file__}")
 - `rascmdr_pip` - Published ras-commander package
 
 **When working on HMS→RAS integration**:
-- May need both `hmscmdr_local` and `rascmdr_local` for cross-repo development
+- May need both `hms` and `rascmdr_local` for cross-repo development
 - Or both `hmscmdr_pip` and `rascmdr_pip` for published package testing
 
 ---
@@ -223,19 +223,19 @@ Includes additional:
 
 **Agent scripts**: Use `uv` for installation, `python` for execution
 
-**Jupyter testing with code changes**: `hmscmdr_local` environment
+**Jupyter testing with code changes**: `hms` environment
 **Jupyter testing published package**: `hmscmdr_pip` environment
 
 **Create environments**:
 ```bash
-conda create -n hmscmdr_local python=3.11
+conda create -n hms python=3.12
 conda create -n hmscmdr_pip python=3.11
 ```
 
 **Install in each**:
 ```bash
 # Local
-conda activate hmscmdr_local && pip install -e ".[all]"
+conda activate hms && pip install -e ".[all]"
 
 # Published
 conda activate hmscmdr_pip && pip install hms-commander

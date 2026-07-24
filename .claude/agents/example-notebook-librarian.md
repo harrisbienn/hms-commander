@@ -422,7 +422,7 @@ Brief description of what this demonstrates and why it's useful.
 
 **Cell 3 (Markdown)**:
 ```markdown
-**For Development**: Use `hmscmdr_local` conda environment
+**For Development**: Use `hms` conda environment
 ```
 
 **Cell 4 (Code)**:
@@ -462,7 +462,7 @@ assert (peaks["Peak Flow (cfs)"] > 0).all(), "Invalid peak flows"
 
 **Import errors**:
 - Check if user has hms-commander installed
-- Verify using correct environment (hmscmdr_local or hmscmdr_pip)
+- Verify using correct environment (hms or hmscmdr_pip)
 - Check for typos in import statements
 
 **Path errors**:
@@ -525,7 +525,7 @@ assert (peaks["Peak Flow (cfs)"] > 0).all(), "Invalid peak flows"
 - Group related notebooks logically
 
 **For QA/QC**:
-- Test in both hmscmdr_local and hmscmdr_pip environments
+- Test in both hms and hmscmdr_pip environments
 - Verify against multiple HMS versions when relevant
 - Check both execution AND output quality
 - Don't just check for errors - verify correctness

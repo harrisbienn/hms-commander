@@ -80,13 +80,13 @@ hms = init_hms_project("hms_example_projects/tifton")
 
 **Cell 2 (Markdown - Dev Mode)**:
 ```markdown
-**For Development**: If working on hms-commander source code, use the `hmscmdr_local`
+**For Development**: If working on hms-commander source code, use the `hms`
 conda environment (editable install) instead of pip install.
 ```
 
 **Why**:
 - Pip users see installation command
-- Dev users know to use hmscmdr_local environment
+- Dev users know to use hms environment
 - Clear separation between usage modes
 
 **See**: `.claude/rules/project/development-environment.md` for environment details
@@ -198,7 +198,7 @@ Demonstrates project initialization, execution, and results extraction.
 # pip install hms-commander
 
 # Cell 3 (markdown)
-**For Development**: Use `hmscmdr_local` conda environment
+**For Development**: Use `hms` conda environment
 
 # Cell 4 (code)
 from hms_commander import HmsExamples, init_hms_project, HmsCmdr, HmsResults

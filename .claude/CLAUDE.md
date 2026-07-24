@@ -62,7 +62,7 @@ Additional in `.claude/rules/testing/` and `.claude/rules/documentation/`:
 
 **Development Environment**:
 - Use `uv` and `python` for agent scripts and tools
-- Jupyter testing: `hmscmdr_local` (local dev) or `hmscmdr_pip` (published package)
+- Jupyter testing: `hms` (local dev) or `hmscmdr_pip` (published package)
 - Create/activate environments before testing code changes
 
 **Keep root clean**:

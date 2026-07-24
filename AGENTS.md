@@ -72,7 +72,7 @@ Core areas:
 - Standard local install: `pip install -e .`
 - Release validation install: `pip install hms-commander`
 - Conda environments used by this project:
-  - `hmscmdr_local` for editable local development
+  - `hms` for editable local development
   - `hmscmdr_pip` for published-package validation
 - HMS execution requires installed HEC-HMS. HMS 3.x is 32-bit and may require Python 2-compatible Jython script generation; HMS 4.x is the default Python 3 path.
 
