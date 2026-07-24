@@ -67,11 +67,11 @@ Notes:
 from pathlib import Path
 from typing import Union, Optional, Tuple, Dict, List
 from datetime import datetime
-import logging
 import re
 
 from .LoggingConfig import get_logger
 from .Decorators import log_call
+from ._parsing import HmsFileParser
 
 logger = get_logger(__name__)
 
@@ -190,6 +190,192 @@ End:
         logger.info(f"Created .grid file: {output_path}")
 
         return output_path
+
+    @staticmethod
+    @log_call
+    def clone_external_dss_grid(
+        grid_file: Union[str, Path],
+        source_grid_name: str,
+        new_grid_name: str,
+        dss_file: Union[str, Path],
+        pathname: str,
+        description: Optional[str] = None,
+    ) -> Dict[str, str]:
+        """Clone a precipitation grid and point the clone at an external DSS.
+
+        The source block supplies the project/version-specific grammar.  This
+        is preferable to synthesizing a new block because HMS 4.x uses nested
+        ``Variant`` blocks while older projects use flat ``Filename`` and
+        ``Pathname`` fields.
+        """
+        grid_path = Path(grid_file)
+        if not grid_path.exists():
+            raise FileNotFoundError(f"Grid file not found: {grid_path}")
+        if not source_grid_name.strip() or not new_grid_name.strip():
+            raise ValueError("source_grid_name and new_grid_name must be non-empty")
+        HmsGrid._validate_dss_pathname(pathname)
+
+        content = HmsFileParser.read_file(grid_path)
+        if HmsGrid._find_grid_block(content, new_grid_name) is not None:
+            raise ValueError(f"Grid '{new_grid_name}' already exists in {grid_path.name}")
+
+        source_match = HmsGrid._find_grid_block(content, source_grid_name)
+        if source_match is None:
+            raise ValueError(
+                f"Grid '{source_grid_name}' was not found in {grid_path.name}"
+            )
+
+        new_block = source_match.group(0)
+        new_block = re.sub(
+            rf'(^Grid:\s*){re.escape(source_grid_name)}(\s*$)',
+            rf'\g<1>{new_grid_name}\g<2>',
+            new_block,
+            count=1,
+            flags=re.IGNORECASE | re.MULTILINE,
+        )
+        new_block = HmsGrid._set_grid_dss_fields(
+            new_block,
+            str(dss_file),
+            pathname,
+            description,
+        )
+
+        new_content = content.rstrip() + "\n\n" + new_block.rstrip() + "\n"
+        HmsFileParser.write_file(grid_path, new_content)
+        logger.info(
+            "Cloned grid '%s' to '%s' in %s",
+            source_grid_name,
+            new_grid_name,
+            grid_path,
+        )
+        return {
+            'grid_file': str(grid_path),
+            'source_grid_name': source_grid_name,
+            'grid_name': new_grid_name,
+            'dss_file': str(dss_file),
+            'pathname': pathname,
+        }
+
+    @staticmethod
+    @log_call
+    def set_external_dss_grid(
+        grid_file: Union[str, Path],
+        grid_name: str,
+        dss_file: Union[str, Path],
+        pathname: str,
+        description: Optional[str] = None,
+    ) -> Dict[str, str]:
+        """Update one existing grid block without touching other definitions."""
+        grid_path = Path(grid_file)
+        if not grid_path.exists():
+            raise FileNotFoundError(f"Grid file not found: {grid_path}")
+        HmsGrid._validate_dss_pathname(pathname)
+
+        content = HmsFileParser.read_file(grid_path)
+        match = HmsGrid._find_grid_block(content, grid_name)
+        if match is None:
+            raise ValueError(f"Grid '{grid_name}' was not found in {grid_path.name}")
+
+        replacement = HmsGrid._set_grid_dss_fields(
+            match.group(0),
+            str(dss_file),
+            pathname,
+            description,
+        )
+        updated = content[:match.start()] + replacement + content[match.end():]
+        HmsFileParser.write_file(grid_path, updated)
+        logger.info("Updated external DSS grid '%s' in %s", grid_name, grid_path)
+        return {
+            'grid_file': str(grid_path),
+            'grid_name': grid_name,
+            'dss_file': str(dss_file),
+            'pathname': pathname,
+        }
+
+    @staticmethod
+    def _find_grid_block(content: str, grid_name: str) -> Optional[re.Match]:
+        """Find an exact top-level ``Grid`` block, tolerating nested variants."""
+        pattern = re.compile(
+            rf'^Grid:\s*{re.escape(grid_name)}\s*$.*?^End:\s*$',
+            re.IGNORECASE | re.MULTILINE | re.DOTALL,
+        )
+        return pattern.search(content)
+
+    @staticmethod
+    def _set_grid_dss_fields(
+        block: str,
+        dss_file: str,
+        pathname: str,
+        description: Optional[str],
+    ) -> str:
+        """Rewrite DSS fields in either modern variant or legacy grid syntax."""
+        if re.search(r'^\s+DSS File Name:', block, re.MULTILINE):
+            block = re.sub(
+                r'(^\s+DSS File Name:\s*).*$',
+                lambda match: match.group(1) + dss_file,
+                block,
+                count=1,
+                flags=re.MULTILINE,
+            )
+        elif re.search(r'^\s+Filename:', block, re.MULTILINE):
+            block = re.sub(
+                r'(^\s+Filename:\s*).*$',
+                lambda match: match.group(1) + dss_file,
+                block,
+                count=1,
+                flags=re.MULTILINE,
+            )
+        else:
+            raise ValueError("Grid block does not contain a DSS filename field")
+
+        if re.search(r'^\s+DSS Pathname:', block, re.MULTILINE):
+            block = re.sub(
+                r'(^\s+DSS Pathname:\s*).*$',
+                lambda match: match.group(1) + pathname,
+                block,
+                count=1,
+                flags=re.MULTILINE,
+            )
+        elif re.search(r'^\s+Pathname:', block, re.MULTILINE):
+            block = re.sub(
+                r'(^\s+Pathname:\s*).*$',
+                lambda match: match.group(1) + pathname,
+                block,
+                count=1,
+                flags=re.MULTILINE,
+            )
+        else:
+            raise ValueError("Grid block does not contain a DSS pathname field")
+
+        if description is not None:
+            if re.search(r'^\s+Description:', block, re.MULTILINE):
+                block = re.sub(
+                    r'(^\s+Description:\s*).*$',
+                    lambda match: match.group(1) + description,
+                    block,
+                    count=1,
+                    flags=re.MULTILINE,
+                )
+            else:
+                block = re.sub(
+                    r'(^\s+Grid Type:.*$)',
+                    rf'\1\n     Description: {description}',
+                    block,
+                    count=1,
+                    flags=re.MULTILINE,
+                )
+        return block
+
+    @staticmethod
+    def _validate_dss_pathname(pathname: str) -> None:
+        """Validate a six-part DSS pathname before writing the grid file."""
+        if (
+            not pathname
+            or not pathname.startswith('/')
+            or not pathname.endswith('/')
+            or len(pathname.split('/')) < 8
+        ):
+            raise ValueError(f"Invalid DSS pathname: {pathname!r}")
 
     @staticmethod
     @log_call
