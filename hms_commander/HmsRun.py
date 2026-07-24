@@ -27,7 +27,6 @@ Example:
 """
 
 import re
-import logging
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union
 
@@ -494,21 +493,21 @@ class HmsRun:
         # Update basin
         new_block = re.sub(
             r'(\s+Basin:\s*)([^\n]*)',
-            rf'\g<1>{new_basin}',
+            lambda match: match.group(1) + new_basin,
             new_block
         )
 
         # Update met (handles both "Precip:" and "Meteorology:" variants)
         new_block = re.sub(
             r'(\s+(?:Precip|Meteorology):\s*)([^\n]*)',
-            rf'\g<1>{new_met}',
+            lambda match: match.group(1) + new_met,
             new_block
         )
 
         # Update control
         new_block = re.sub(
             r'(\s+Control:\s*)([^\n]*)',
-            rf'\g<1>{new_control}',
+            lambda match: match.group(1) + new_control,
             new_block
         )
 
@@ -516,7 +515,7 @@ class HmsRun:
         if re.search(r'\s+DSS File:', new_block):
             new_block = re.sub(
                 r'(\s+DSS File:\s*)([^\n]*)',
-                rf'\g<1>{output_dss}',
+                lambda match: match.group(1) + output_dss,
                 new_block
             )
         else:
@@ -532,7 +531,7 @@ class HmsRun:
         if re.search(r'\s+Log File:', new_block):
             new_block = re.sub(
                 r'(\s+Log File:\s*)([^\n]*)',
-                rf'\g<1>{log_name}',
+                lambda match: match.group(1) + log_name,
                 new_block
             )
         else:
@@ -547,7 +546,7 @@ class HmsRun:
         if re.search(r'\s+Description:', new_block):
             new_block = re.sub(
                 r'(\s+Description:\s*)([^\n]*)',
-                rf'\g<1>{description}',
+                lambda match: match.group(1) + description,
                 new_block
             )
         else:
