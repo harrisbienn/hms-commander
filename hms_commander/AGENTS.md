@@ -17,9 +17,13 @@ This directory contains the public Python package for HMS automation.
 - Preserve HMS formatting and section ordering unless the feature requires a controlled change.
 - Avoid destructive edits to original model files; prefer clone workflows for scenario changes.
 - Validate cross-file references when changing run, basin, met, control, or DSS output settings.
+- Input-only project clones must exclude generated result artifacts unless an input DSS is explicitly referenced by project configuration.
+- Run success checks must require the exact HMS completion marker, reject abort/error markers, and verify a non-empty output DSS. Downstream readiness additionally requires catalog and time-series validation.
+- HMS-to-RAS helpers must preserve exact DSS pathname, time window, interval, units, element identity, and target boundary metadata; do not infer a successful hydraulic mapping from element names alone.
 
 ## Tests
 
 - Add targeted tests under `tests/` for parser, file-edit, storm-generation, or results behavior.
 - Prefer real sample project structures and fixtures over mocks.
 - Isolate tests that require installed HEC-HMS, Java, GIS, DSS, or network access with the existing pytest markers.
+- Add regressions for clone contamination, ambiguous project references, false-positive completion logs, empty DSS output, and incomplete handoff catalogs when those paths change.
