@@ -214,7 +214,7 @@ print(f"End: {time_window['end_date']} {time_window['end_time']}")
 # Get computational timestep
 interval = HmsControl.get_time_interval("MyProject.control")
 print(f"Time interval: {interval}")
-# Output: "15 Minutes"
+# Output: "15"
 ```
 
 ### Setting Time Window
@@ -239,6 +239,10 @@ HmsControl.set_time_interval("MyProject.control", 15)
 # Or use string format
 HmsControl.set_time_interval("MyProject.control", "15 Minutes")
 ```
+
+Both input forms serialize the HMS field as integer minutes
+(`Time Interval: 15`), which is the grammar expected by current HEC-HMS
+versions.
 
 ### Creating New Control Specification
 

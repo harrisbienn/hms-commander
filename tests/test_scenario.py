@@ -130,7 +130,7 @@ def test_prepare_workspace_clones_and_rewires_without_mutating_source(tmp_path):
     assert f"Grid: {prepared.grid_name}" in grid
     assert "DSS File Name: forcing\\rank001.dss" in grid
     assert "Start Date: 18 September 2019" in control
-    assert "Time Interval: 5 Minutes" in control
+    assert "Time Interval: 5" in control
     assert f"Run: {prepared.run_name}" in run
     assert f"DSS File: output\\{prepared.output_dss.name}" in run
     assert {

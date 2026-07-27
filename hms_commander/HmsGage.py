@@ -78,11 +78,20 @@ class HmsGage:
         for name, attrs in gage_blocks.items():
             record = {
                 'name': name,
-                'type': attrs.get('Type', 'Precipitation'),
+                'type': attrs.get(
+                    'Gage Type',
+                    attrs.get('Type', 'Precipitation'),
+                ),
                 'units': attrs.get('Units', ''),
                 'data_type': attrs.get('Data Type', ''),
-                'dss_file': attrs.get('DSS File Name', ''),
-                'dss_pathname': attrs.get('DSS Pathname', ''),
+                'dss_file': attrs.get(
+                    'Filename',
+                    attrs.get('DSS File Name', ''),
+                ),
+                'dss_pathname': attrs.get(
+                    'Pathname',
+                    attrs.get('DSS Pathname', ''),
+                ),
                 'description': attrs.get('Description', ''),
             }
             records.append(record)
@@ -157,7 +166,7 @@ class HmsGage:
             >>> pathname = HmsGage.get_dss_pathname("Precip-Gage-1", "model.gage")
         """
         info = HmsGage.get_gage_info(gage_name, gage_path, hms_object)
-        return info.get('DSS Pathname', '')
+        return info.get('Pathname', info.get('DSS Pathname', ''))
 
     @staticmethod
     @log_call
@@ -267,15 +276,30 @@ Gage: {name}
         modified = False
 
         if dss_file is not None:
-            block_content = HmsGage._update_param(block_content, 'DSS File Name', dss_file)
+            block_content = HmsGage._update_existing_param(
+                block_content,
+                ('Filename', 'DSS File Name'),
+                dss_file,
+                gage_name,
+            )
             modified = True
 
         if pathname is not None:
-            block_content = HmsGage._update_param(block_content, 'DSS Pathname', pathname)
+            block_content = HmsGage._update_existing_param(
+                block_content,
+                ('Pathname', 'DSS Pathname'),
+                pathname,
+                gage_name,
+            )
             modified = True
 
         if units is not None:
-            block_content = HmsGage._update_param(block_content, 'Units', units)
+            block_content = HmsGage._update_existing_param(
+                block_content,
+                ('Units',),
+                units,
+                gage_name,
+            )
             modified = True
 
         if modified:
@@ -402,3 +426,24 @@ Gage: {name}
         """Update a parameter value in gage block content."""
         updated, _ = HmsFileParser.update_parameter(content, param_name, new_value)
         return updated
+
+    @staticmethod
+    def _update_existing_param(
+        content: str,
+        param_names: tuple[str, ...],
+        new_value: str,
+        gage_name: str,
+    ) -> str:
+        """Update the first matching HMS 3.x or 4.x gage parameter."""
+        for param_name in param_names:
+            updated, changed = HmsFileParser.update_parameter(
+                content,
+                param_name,
+                new_value,
+            )
+            if changed:
+                return updated
+        expected = " or ".join(param_names)
+        raise ValueError(
+            f"Gage '{gage_name}' has no {expected} parameter to update"
+        )
