@@ -1,11 +1,12 @@
 """Tests for immutable HMS scenario workspace preparation."""
 
 from datetime import datetime
+import importlib
 from pathlib import Path
 
 import pytest
 
-from hms_commander import HmsScenario
+from hms_commander import HmsScenario, HmsScenarioWorkspace
 
 
 def _write_project(folder: Path) -> Path:
@@ -14,6 +15,7 @@ def _write_project(folder: Path) -> Path:
         """Project: Example
      Version: 4.9
      Filepath Separator: \\
+     DSS File Name: project_data.dss
 End:
 
 Precipitation: BaselineMet
@@ -64,6 +66,8 @@ End:
      Basin: BaselineBasin
      Precip: BaselineMet
      Control: BaselineControl
+     Last Execution Date: 2 January 2020
+     Last Execution Time: 03:04:05
 End:
 """,
         encoding="utf-8",
@@ -86,6 +90,14 @@ End:
 """,
         encoding="utf-8",
     )
+    (folder / "results").mkdir()
+    (folder / "results" / "old_run.h5").write_bytes(b"generated results")
+    (folder / "baseline.dss").write_bytes(b"generated root output")
+    (folder / "project_data.dss").write_bytes(b"required paired data")
+    (folder / "baseline.log").write_text("generated log", encoding="utf-8")
+    (folder / "baseline.out").write_text("generated report", encoding="utf-8")
+    (folder / "data").mkdir()
+    (folder / "data" / "required_input.dss").write_bytes(b"required model input")
     return folder
 
 
@@ -116,6 +128,17 @@ def test_prepare_workspace_clones_and_rewires_without_mutating_source(tmp_path):
     assert prepared.precipitation_file.read_bytes() == b"not-a-real-dss"
     assert prepared.output_dss.parent.is_dir()
     assert prepared.output_dss.name == "lwi-r3-rank-001_hms.dss"
+    assert prepared.clone_policy == "input-only"
+    assert not (prepared.project_folder / "results").exists()
+    assert not (prepared.project_folder / "baseline.dss").exists()
+    assert (
+        prepared.project_folder / "project_data.dss"
+    ).read_bytes() == b"required paired data"
+    assert not (prepared.project_folder / "baseline.log").exists()
+    assert not (prepared.project_folder / "baseline.out").exists()
+    assert (
+        prepared.project_folder / "data" / "required_input.dss"
+    ).read_bytes() == b"required model input"
 
     met = (prepared.project_folder / f"{prepared.met_name}.met").read_text(
         encoding="utf-8"
@@ -133,6 +156,10 @@ def test_prepare_workspace_clones_and_rewires_without_mutating_source(tmp_path):
     assert "Time Interval: 5" in control
     assert f"Run: {prepared.run_name}" in run
     assert f"DSS File: output\\{prepared.output_dss.name}" in run
+    cloned_run_block = run.split(f"Run: {prepared.run_name}", maxsplit=1)[1]
+    assert "Last Execution Date:" not in cloned_run_block
+    assert "Last Execution Time:" not in cloned_run_block
+    assert "Last Execution Date: 2 January 2020" in run
     assert {
         path.name: path.read_bytes()
         for path in source.iterdir()
@@ -178,3 +205,86 @@ def test_prepare_workspace_is_non_destructive_by_default(tmp_path):
             datetime(2020, 1, 1),
             datetime(2020, 1, 2),
         )
+
+
+def _execution_workspace(tmp_path: Path) -> HmsScenarioWorkspace:
+    project = tmp_path / "workspace"
+    output = project / "output" / "scenario_hms.dss"
+    log = project / "scenario_hms.log"
+    project.mkdir()
+    output.parent.mkdir()
+    output.write_bytes(b"dss output")
+    (project / "Example.hms").write_text("Project: Example\nEnd:\n", encoding="utf-8")
+    return HmsScenarioWorkspace(
+        scenario_id="scenario",
+        source_project=tmp_path / "source",
+        project_folder=project,
+        project_file=project / "Example.hms",
+        run_name="FF_scenario",
+        met_name="FF_scenario_Met",
+        control_name="FF_scenario_Control",
+        grid_name="FF_scenario_Precip",
+        precipitation_source=tmp_path / "source.dss",
+        precipitation_file=project / "forcing" / "source.dss",
+        precipitation_pathname="/A/B/C///F/",
+        output_dss=output,
+        log_file=log,
+    )
+
+
+def test_execute_requires_hms_completion_marker(tmp_path, monkeypatch):
+    workspace = _execution_workspace(tmp_path)
+    scenario_module = importlib.import_module("hms_commander.HmsScenario")
+    workspace.log_file.write_text(
+        'NOTE 15301: Began computing simulation run "FF_scenario".\n'
+        "ERROR 40516: Precipitation is missing or invalid.\n"
+        'WARNING 15303: Aborted run "FF_scenario".\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        scenario_module.HmsPrj,
+        "initialize",
+        lambda self, *args, **kwargs: self,
+    )
+    monkeypatch.setattr(
+        scenario_module.HmsCmdr,
+        "compute_run",
+        lambda *args, **kwargs: True,
+    )
+
+    artifact = HmsScenario.execute(workspace)
+
+    assert artifact.status == "failed"
+    assert artifact.process_succeeded is True
+    assert artifact.completion_marker_found is False
+    assert artifact.abort_marker_found is True
+    assert artifact.error_count == 1
+
+
+def test_execute_accepts_clean_hms_completion(tmp_path, monkeypatch):
+    workspace = _execution_workspace(tmp_path)
+    scenario_module = importlib.import_module("hms_commander.HmsScenario")
+    workspace.log_file.write_text(
+        'NOTE 15301: Began computing simulation run "FF_scenario".\n'
+        'NOTE 15302: Finished computing simulation run "FF_scenario".\n'
+        "NOTE 15312: The total runtime for this simulation is 00:01.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        scenario_module.HmsPrj,
+        "initialize",
+        lambda self, *args, **kwargs: self,
+    )
+    monkeypatch.setattr(
+        scenario_module.HmsCmdr,
+        "compute_run",
+        lambda *args, **kwargs: True,
+    )
+
+    artifact = HmsScenario.execute(workspace)
+
+    assert artifact.status == "succeeded"
+    assert artifact.process_succeeded is True
+    assert artifact.completion_marker_found is True
+    assert artifact.abort_marker_found is False
+    assert artifact.error_count == 0

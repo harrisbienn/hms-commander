@@ -483,6 +483,15 @@ class HmsRun:
         # Create new block with modifications
         new_block = source_block
 
+        # A clone has not run yet. Retaining execution timestamps from the
+        # source would make the new scenario appear to have historical results.
+        new_block = re.sub(
+            r"^[^\r\n]*\bLast Execution (?:Date|Time):[^\r\n]*(?:\r?\n|$)",
+            "",
+            new_block,
+            flags=re.MULTILINE,
+        )
+
         # Update run name
         new_block = re.sub(
             rf'Run:\s*{escaped_name}',

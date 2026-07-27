@@ -152,3 +152,6 @@ examples/upstream_analysis_outputs/
 
 # pytest cache
 .pytest-tmp/
+
+# test temp
+.test-tmp/
