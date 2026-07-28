@@ -17,6 +17,7 @@ from .LoggingConfig import get_logger
 from .Decorators import log_call
 from ._parsing import HmsFileParser
 from ._constants import TIME_INTERVALS, HMS_DATE_FORMAT, HMS_TIME_FORMAT, MINUTES_PER_HOUR
+from .HmsUtils import HmsUtils
 
 logger = get_logger(__name__)
 
@@ -215,20 +216,21 @@ class HmsControl:
         """
         control_path = Path(control_path)
 
-        # Convert integer to HMS interval string
-        if isinstance(interval, int):
-            interval = HmsControl._minutes_to_interval(interval)
-
-        if interval not in HmsControl.VALID_INTERVALS:
-            logger.warning(f"Non-standard interval: {interval}")
+        interval_minutes = HmsControl._interval_to_minutes(interval)
+        if interval_minutes not in TIME_INTERVALS.values():
+            logger.warning(f"Non-standard interval: {interval_minutes} minutes")
 
         content = HmsControl._read_control_file(control_path)
-        content = HmsControl._update_param(content, 'Time Interval', interval)
+        content = HmsControl._update_param(
+            content,
+            'Time Interval',
+            str(interval_minutes),
+        )
 
         with open(control_path, 'w', encoding='utf-8') as f:
             f.write(content)
 
-        logger.info(f"Time interval set to: {interval}")
+        logger.info(f"Time interval set to: {interval_minutes} minutes")
         return True
 
     @staticmethod
@@ -371,9 +373,7 @@ class HmsControl:
         """
         control_path = Path(control_path)
 
-        # Convert integer to HMS interval string
-        if isinstance(time_interval, int):
-            time_interval = HmsControl._minutes_to_interval(time_interval)
+        interval_minutes = HmsControl._interval_to_minutes(time_interval)
 
         # Format dates
         start_date_str = start_date.strftime(HMS_DATE_FORMAT)
@@ -387,7 +387,7 @@ class HmsControl:
      Start Time: {start_time_str}
      End Date: {end_date_str}
      End Time: {end_time_str}
-     Time Interval: {time_interval}
+     Time Interval: {interval_minutes}
 End:
 """
 
@@ -437,3 +437,22 @@ End:
             elif hours == 1:
                 return "1 Hour"
             return f"{hours} Hours"
+
+    @staticmethod
+    def _interval_to_minutes(interval: Union[str, int]) -> int:
+        """Normalize a public interval value to serialized HMS minutes."""
+        if isinstance(interval, bool):
+            raise ValueError("Time interval must be a positive number of minutes")
+        if isinstance(interval, int):
+            minutes = interval
+        elif isinstance(interval, str):
+            value = interval.strip()
+            if value.isdigit():
+                minutes = int(value)
+            else:
+                minutes = HmsUtils.parse_time_interval(value)
+        else:
+            raise TypeError("Time interval must be an integer or string")
+        if minutes <= 0:
+            raise ValueError("Time interval must be a positive number of minutes")
+        return minutes

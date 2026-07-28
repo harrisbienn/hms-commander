@@ -5,113 +5,145 @@ harness_scope: shared
 source_owner: gpt-cmdr
 security_review: internal
 description: |
-  Links HEC-HMS watershed models to HEC-RAS river models by extracting HMS DSS results
-  and preparing them for RAS boundary condition import. Handles flow hydrograph export,
-  spatial referencing (HMS outlets to RAS cross sections), DSS pathname formatting,
-  quality validation, and time series alignment. Use when setting up HMS-to-RAS workflows,
-  exporting HMS results for RAS, preparing upstream boundary conditions, coordinating
-  watershed-to-river integrated modeling, or validating HMS results before handoff.
-  Leverages shared RasDss infrastructure for consistent DSS operations across both tools.
-  Trigger keywords: HMS to RAS, link HMS RAS, boundary condition, upstream BC, watershed
-  to river, integrated model, export HMS, spatial matching, hydrograph import.
+  Links HEC-HMS watershed models to HEC-RAS river models by extracting HMS DSS
+  results and preparing an auditable hydrologic handoff. Covers exact flow
+  pathname inventory, time and value qualification, outlet-to-boundary
+  crosswalks, and isolated ras-commander scenario preparation. Use for HMS to
+  RAS workflows, boundary conditions, upstream hydrographs, watershed-to-river
+  integration, or RAS import qualification.
+  Trigger keywords: HMS to RAS, link HMS RAS, boundary condition, upstream BC,
+  watershed to river, integrated model, export HMS, spatial matching,
+  hydrograph import.
 ---
 
 # Linking HMS to HEC-RAS
 
-## When This Skill Is Activated
+## Scope
 
-You are the HMS-to-RAS integration specialist. This is the HMS side of the handoff — you prepare and validate results for RAS import.
+This skill owns the HMS side of the handoff. It proves that the hydrologic
+outputs are complete and describes their intended hydraulic targets.
+ras-commander owns RAS workspace preparation, boundary editing, execution, and
+hydraulic result review.
 
 ## Handoff Workflow
 
-### 1. Ensure HMS Has Been Run
+### 1. Prove HMS Execution
 
-If not already run, delegate to `hms_execute_runs` skill first.
+Use `hms_execute_runs` when the run has not already been qualified. Require the
+exact HMS completion marker, reject abort/error markers, and verify that the
+output DSS is non-empty and catalog-readable.
 
 ```python
-from hms_commander import init_hms_project, hms, HmsResults, HmsGeo
+from hms_commander import init_hms_project, hms
+
 init_hms_project("watershed")
 dss_file = hms.run_df.loc["Design_Storm", "dss_file"]
 ```
 
-### 2. Extract Flow Hydrographs
+Execution completion is not yet a qualified RAS handoff.
 
-For each outlet/junction that feeds into RAS:
+### 2. Inventory Exact Flow Pathnames
+
+Enumerate the complete required-path set. Do not sample one outlet or infer DSS
+paths from element names.
+
 ```python
+from hms_commander import HmsDss, HmsResults
+
+catalog = HmsDss.get_catalog(dss_file)
 flows = HmsResults.get_outflow_timeseries(dss_file, "Watershed_Outlet")
 ```
 
-For multiple tributaries:
+For every required pathname, preserve:
+
+- exact six-part DSS pathname;
+- HMS element identity;
+- first and last timestamp;
+- interval, units, and DSS data type;
+- missing, NaN, and unexpected negative-value counts;
+- peak flow and peak time; and
+- the approved recession or other extension used to cover the RAS window.
+
+### 3. Crosswalk to Active RAS Geometry
+
+For every flow pathname, specify exactly one intended RAS selector:
+
+- 1D: river, reach, and station; or
+- storage/2D: area name and, when applicable, BC line.
+
+Document the outlet coordinates and CRS when spatial review is needed:
+
 ```python
-for trib in ["Trib_A", "Trib_B"]:
-    flows = HmsResults.get_outflow_timeseries(dss_file, trib)
-```
+from hms_commander import HmsGeo
 
-### 3. Validate Quality
-
-Before handing off to RAS, verify data quality:
-```python
-peaks = HmsResults.get_peak_flows(dss_file)
-assert all(peaks["Peak Flow (cfs)"] > 0), "Negative or zero peaks detected"
-
-flows = HmsResults.get_outflow_timeseries(dss_file, "Outlet")
-assert flows.notna().all().all(), "NaN values in hydrograph"
-assert flows["Flow"].min() >= 0, "Negative flows detected"
-```
-
-### 4. Document Spatial Reference
-
-Provide outlet locations so RAS engineer can match to cross sections:
-```python
-lat, lon = HmsGeo.get_project_centroid_latlon("project.geo", crs_epsg="EPSG:2278")
 HmsGeo.export_all_geojson("project.basin", "geojson_output", "project.geo")
 ```
 
-### 5. Prepare Handoff Package
+A matching `.u##` boundary block is not proof of a valid mapping. The selector
+must exist in the geometry used by the active RAS plan. Record inherited,
+inactive, or missing targets as unresolved and keep them out of the successful
+mapping count.
 
-Document for the RAS side:
-- DSS file path (absolute)
-- DSS pathname(s) for each element
-- Peak flow(s) and timing
-- Outlet coordinates
-- Time step used (urban: 15-min, rural: 1-hour)
-- CRS/projection
+### 4. Prepare the Handoff Record
 
-### 6. Delegate RAS Side
+The record should contain:
 
-The RAS import is handled by ras-commander:
-- **Cross-repo skill**: `ras-commander/.claude/skills/importing-hms-boundaries/`
-- **Coordinator agent**: `.claude/agents/hms-ras-workflow-coordinator.md`
+- source and derivative DSS paths plus provenance or checksum;
+- required pathname inventory and validation results;
+- HMS and RAS simulation windows;
+- extension/recession policy;
+- exact RAS selectors and geometry-match status;
+- approved non-HMS source-gage inputs, if any; and
+- unresolved mappings and their disposition.
 
-## Cross-Tool Compatibility
+### 5. Continue in ras-commander
 
-- **Units**: Both HMS and RAS use CFS — no conversion needed
-- **DSS**: RAS can directly read HMS DSS files (shared RasDss infrastructure)
-- **Time steps**: Match if possible; RAS can interpolate but matching is preferred
-- **CRS**: Both must use same coordinate system — pass `crs_epsg` to HmsGeo
+Use the owning RAS APIs and skills:
 
-## If Something Goes Wrong
+- `RasScenario` for isolated project, plan, and unsteady-flow clones;
+- `RasUnsteady` for exact DSS links;
+- `hecras_compute_plans` for execution;
+- `hecras_parse_compute-messages` for completion and warning evidence; and
+- `hecras_extract_results` for hydraulic results.
 
-- **RAS can't find DSS**: Provide absolute path or copy DSS to RAS project folder
-- **Spatial mismatch**: Export HMS boundaries to GeoJSON, overlay with RAS geometry in GIS
-- **Time series gaps**: Check HMS log file, re-run with shorter interval
-- **Peak mismatch after import**: Verify same DSS pathname, check unit consistency
+The active plan, plan simulation window, DSS time coverage, boundary-to-geometry
+crosswalk, and RAS result HDF window must agree before the pipeline is called
+fully qualified.
+
+## Qualification States
+
+Report these states independently:
+
+1. HMS execution complete.
+2. Hydrologic handoff qualified.
+3. RAS execution complete.
+4. Hydraulic QA/QC accepted.
+
+An execution can pass while a later state remains conditional.
+
+## Common Failures
+
+- **RAS cannot find the DSS**: Prefer a copied project-relative reference that
+  begins with `.\`; otherwise use a verified absolute path.
+- **No data read**: Compare the exact pathname, units, interval, and RAS window
+  against the DSS catalog and series timestamps.
+- **Ignored lateral inflow**: Confirm the referenced storage area, 2D area, BC
+  line, or cross section exists in the active geometry.
+- **Partial time coverage**: Apply only an approved extension policy and retain
+  the unmodified HMS result as provenance.
+- **Peak mismatch**: Verify the same pathname and units before investigating
+  interpolation or hydraulic behavior.
 
 ## Primary Sources
 
-- `hms_commander/HmsResults.py` — Flow extraction
-- `hms_commander/HmsDss.py` — DSS operations (wraps RasDss)
-- `hms_commander/HmsGeo.py` — Spatial reference
-- `.claude/rules/integration/hms-ras-linking.md` — Complete workflow patterns
+- `hms_commander/HmsScenario.py` - scenario construction and execution evidence
+- `hms_commander/HmsResults.py` - flow extraction and statistics
+- `hms_commander/HmsDss.py` - DSS catalog and time-series operations
+- `hms_commander/HmsGeo.py` - spatial reference exports
+- `ras-commander/ras_commander/RasScenario.py` - RAS-side preparation contract
 
-## Implementing Agent
+## Related Skills
 
-For full cross-tool coordination, delegate to:
-`.claude/agents/hms-ras-workflow-coordinator.md`
-
-## Delegation Points
-
-- **Need to run HMS first** → `hms_execute_runs` skill
-- **Need to extract/validate results** → `hms_extract_dss-results` skill
-- **Need watershed structure** → `hms_parse_basin-models` skill
-- **RAS side import** → `ras-commander/.claude/skills/importing-hms-boundaries/`
+- `hms_execute_runs`
+- `hms_extract_dss-results`
+- `hms_parse_basin-models`

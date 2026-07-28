@@ -71,6 +71,19 @@ Validate:
 - No NaN values: `assert flows.notna().all().all()`
 - No negative flows: `assert flows["Flow"].min() >= 0`
 
+For an HMS-to-RAS handoff, validate the complete required-path inventory rather
+than sampling one outlet. For every pathname, record:
+
+- first and last timestamp;
+- interval, units, and DSS data type;
+- missing/NaN/negative-value counts;
+- peak value and peak time; and
+- whether the series covers the full RAS window, including the approved
+  recession or other extension.
+
+Preserve the exact pathname and element name in the evidence. Do not use peak
+flow alone as proof of temporal coverage.
+
 ## Volume Analysis
 
 ```python

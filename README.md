@@ -41,6 +41,12 @@ This library exists to **bridge that gap**—extending the [ras-commander](https
 - Consistent API patterns across both HMS and RAS automation
 - LLM-assisted workflows for complex multi-model scenarios
 
+For linked workflows, keep execution and qualification separate. A completed
+HMS process and non-empty DSS establish the execution gate; a RAS-ready
+handoff also requires the complete expected pathname inventory, full time
+coverage, units/interval/value checks, recession review, and an exact
+crosswalk to boundaries that exist in the active RAS geometry.
+
 **LLM Forward Hydrologic Modeling Automation**
 
 A Python library for automating HEC-HMS operations, built using [CLB Engineering's LLM Forward Approach](https://clbengineering.com/llm-forward). Within two years, CLB Engineering built the **most robust and feature-complete HEC-RAS and HEC-HMS automation solution on the open internet** using LLM Forward approaches -- proving that licensed professional engineers working alongside Large Language Models can create extraordinary value in compressed timeframes.

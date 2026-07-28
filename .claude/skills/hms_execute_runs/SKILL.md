@@ -71,7 +71,7 @@ script = HmsJython.generate_compute_script(
 success, stdout, stderr = HmsJython.execute_script(script, hms_exe_path=hms_3x_path)
 ```
 
-### 5. Check Results
+### 5. Check Execution, Then Qualify Results
 
 ```python
 if success:
@@ -83,6 +83,19 @@ else:
     log_file = hms.project_folder / f"RUN_Run 1.log"
     print(open(log_file).read())
 ```
+
+Do not treat the Python return value or DSS file existence as sufficient by
+itself. The execution gate requires all of the following:
+
+- the run log contains the exact HMS completion marker;
+- no abort or error marker is present;
+- the output DSS exists and is non-empty; and
+- the output catalog can be read.
+
+If the result will feed RAS, continue with `hms_extract_dss-results` and
+`hms_link_to-ras`. That second gate verifies the exact required pathnames,
+values, units, interval, and full downstream simulation window. Report the
+states separately as `execution complete` and `handoff qualified`.
 
 ## Worker Count Guidance
 

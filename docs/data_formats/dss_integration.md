@@ -479,12 +479,41 @@ Common DSS time intervals:
 5. **Backup results**: DSS files can be large; backup important results
 6. **Check catalog**: Verify pathnames before reading data
 
+## Qualifying an HMS-to-RAS Handoff
+
+File existence is only the first gate. Before a result DSS is used as a RAS
+boundary source, record and verify:
+
+- the exact six-part pathname for every required HMS element;
+- the first and last usable timestamps and the interval;
+- units and DSS data type;
+- missing, NaN, and unexpected negative values;
+- peak flow and peak time;
+- the recession or other approved extension needed to cover the full RAS
+  simulation window; and
+- the intended RAS river/reach/station or storage-area/2D boundary selector.
+
+Keep three outcomes separate:
+
+1. **HMS execution complete**: the HMS log contains its exact completion marker,
+   contains no abort/error marker, and the output DSS is non-empty.
+2. **Hydrologic handoff qualified**: every required hydrograph passes the catalog,
+   value, units, interval, and time-coverage checks.
+3. **RAS mapping qualified**: every intended selector exists in the active RAS
+   geometry and the active RAS plan uses the same simulation window.
+
+An output may pass the first gate while remaining conditional at either
+downstream gate. Inherited or intentionally inactive RAS boundaries should be
+listed as unresolved; they must not be counted as successful HMS mappings.
+
 ## Common Pitfalls
 
 - **Wrong parameter type**: Use PRECIP-INC (incremental) not PRECIP-CUM for HMS input
 - **Case sensitivity**: DSS pathnames are case-sensitive
 - **Missing units**: Always specify units when writing
 - **Interval mismatch**: Ensure DSS interval matches HMS computational interval
+- **Partial time coverage**: A valid hydrograph that ends before the RAS window is still an incomplete handoff unless an approved extension policy is applied
+- **Inactive RAS target**: A matching unsteady-flow block is not sufficient when its storage area, 2D area, BC line, or cross section is absent from the active geometry
 - **Date format**: D-part uses format like "01JAN2020" (no spaces)
 - **Trailing slashes**: Always include trailing slash in pathname
 - **F-part conflicts**: Same A-F parts except F will overwrite

@@ -109,6 +109,11 @@ Core areas:
 - HMS 3.x projects need extra version awareness, especially for Python 2-compatible Jython execution.
 - Clone workflows should be non-destructive, traceable, and side-by-side comparable in HEC-HMS.
 - HMS-to-RAS workflows should hand off DSS file, pathname, outlet/spatial reference, time window, units, and validation notes.
+- Treat HMS process completion and downstream qualification as separate gates. A non-empty output DSS is necessary but does not prove that every required hydrograph exists, spans the RAS window, uses the expected interval/units, or is mapped to an active RAS geometry boundary.
+- For scenario execution, require the exact HMS completion marker, reject abort/error markers, and catalog the output DSS before declaring the hydrologic handoff ready.
+- An HMS-to-RAS handoff record should enumerate every required pathname and include first/last timestamp, interval, units, missing/NaN/negative-value checks, peak/recession notes, and the intended RAS boundary selector.
+- Keep inactive or inherited RAS boundary references out of the successful-mapping count. Record them explicitly as unresolved and let the owning study decide whether they are required, removed, or supplied by an approved non-HMS source.
+- Do not edit generated `.agents/skills/` links when integration guidance changes. Update the allowlisted source skill under `.claude/skills/` and regenerate the bridge.
 
 ## Notebooks And Docs
 

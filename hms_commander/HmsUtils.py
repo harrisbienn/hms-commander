@@ -11,7 +11,7 @@ import os
 import re
 import shutil
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 from datetime import datetime, timedelta
 
 from .LoggingConfig import get_logger
@@ -254,7 +254,8 @@ class HmsUtils:
     def copy_project(
         source_folder: Union[str, Path],
         dest_folder: Union[str, Path],
-        overwrite: bool = False
+        overwrite: bool = False,
+        ignore: Optional[Callable[[str, List[str]], Iterable[str]]] = None,
     ) -> Path:
         """
         Copy an HMS project to a new location.
@@ -263,6 +264,8 @@ class HmsUtils:
             source_folder: Source project folder
             dest_folder: Destination folder
             overwrite: Whether to overwrite existing destination
+            ignore: Optional ``shutil.copytree``-compatible callback that
+                returns names to exclude from each copied directory.
 
         Returns:
             Path to the copied project
@@ -280,7 +283,7 @@ class HmsUtils:
                 raise FileExistsError(f"Destination exists: {dest_folder}")
 
         logger.info(f"Copying project from {source_folder} to {dest_folder}")
-        shutil.copytree(source_folder, dest_folder)
+        shutil.copytree(source_folder, dest_folder, ignore=ignore)
 
         return dest_folder
 

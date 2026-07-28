@@ -70,6 +70,69 @@ class TestGetDssPathname:
 
 
 # ---------------------------------------------------------------------------
+# HMS 4 external DSS gages
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def hms4_gage_path(tmp_path):
+    path = tmp_path / "project.gage"
+    path.write_text(
+        """Gage Manager: Example
+     Version: 4.13
+End:
+
+Gage: Upstream Flow
+     Gage: Upstream Flow
+     Gage Type: Flow
+     Data Source Type: External DSS
+     Filename: data\\source.dss
+     Pathname: //SOURCE/FLOW/FLOW/01JAN2020/1HOUR/OBS/
+End:
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_hms4_external_dss_gage_is_read(hms4_gage_path):
+    gages = HmsGage.get_gages(hms4_gage_path)
+
+    assert gages.loc[0, "type"] == "Flow"
+    assert gages.loc[0, "dss_file"] == r"data\source.dss"
+    assert (
+        gages.loc[0, "dss_pathname"]
+        == "//SOURCE/FLOW/FLOW/01JAN2020/1HOUR/OBS/"
+    )
+    assert (
+        HmsGage.get_dss_pathname("Upstream Flow", hms4_gage_path)
+        == "//SOURCE/FLOW/FLOW/01JAN2020/1HOUR/OBS/"
+    )
+
+
+def test_update_hms4_external_dss_gage(hms4_gage_path):
+    HmsGage.update_gage(
+        hms4_gage_path,
+        "Upstream Flow",
+        dss_file=r"forcing\scenario-boundaries.dss",
+        pathname="//SOURCE/FLOW/FLOW//1HOUR/QUALIFICATION/",
+    )
+
+    content = hms4_gage_path.read_text(encoding="utf-8")
+    assert r"Filename: forcing\scenario-boundaries.dss" in content
+    assert "Pathname: //SOURCE/FLOW/FLOW//1HOUR/QUALIFICATION/" in content
+    assert "DSS File Name:" not in content
+    assert "DSS Pathname:" not in content
+
+
+def test_update_hms4_gage_fails_closed_when_reference_is_missing(tmp_path):
+    path = tmp_path / "project.gage"
+    path.write_text("Gage: Broken\n     Gage Type: Flow\nEnd:\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="no Filename or DSS File Name"):
+        HmsGage.update_gage(path, "Broken", dss_file="forcing.dss")
+
+
+# ---------------------------------------------------------------------------
 # Error handling
 # ---------------------------------------------------------------------------
 

@@ -80,12 +80,12 @@ class TestSetTimeInterval:
     def test_modify_and_readback(self, tmp_control):
         HmsControl.set_time_interval(tmp_control, "15 Minutes")
         interval = HmsControl.get_time_interval(tmp_control)
-        assert "15" in interval
+        assert interval == "15"
 
     def test_integer_input(self, tmp_control):
         HmsControl.set_time_interval(tmp_control, 30)
         interval = HmsControl.get_time_interval(tmp_control)
-        assert "30" in interval
+        assert interval == "30"
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +126,7 @@ class TestCreateControl:
             "     Start Time: 06:30\n"
             "     End Date: 02 January 2024\n"
             "     End Time: 18:45\n"
-            "     Time Interval: 30 Minutes\n"
+            "     Time Interval: 30\n"
             "End:\n"
         )
 
@@ -151,13 +151,13 @@ class TestCreateControl:
         assert time_window["end_date_str"] == "13 May 2025"
         assert time_window["end_time_str"] == "23:00"
 
-        assert HmsControl.get_time_interval(control_path) == "1 Hour"
+        assert HmsControl.get_time_interval(control_path) == "60"
 
         info = HmsControl.get_control_info(control_path)
         assert info["Description"] == "Created by hms-commander"
         assert info["Start Date"] == "12 May 2025"
         assert info["End Date"] == "13 May 2025"
-        assert info["Time Interval"] == "1 Hour"
+        assert info["Time Interval"] == "60"
 
 
 # ---------------------------------------------------------------------------

@@ -45,6 +45,7 @@ class HmsScenarioWorkspace:
     precipitation_pathname: str
     output_dss: Path
     log_file: Path
+    clone_policy: str = "input-only"
 
     def to_dict(self) -> Dict[str, Any]:
         """Return a JSON-serializable workspace record."""
@@ -80,6 +81,10 @@ class HmsRunArtifact:
     finished_at: str
     dss_exists: bool
     dss_size_bytes: int
+    process_succeeded: bool = False
+    completion_marker_found: bool = False
+    abort_marker_found: bool = False
+    error_count: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         """Return a JSON-serializable run artifact."""
@@ -121,6 +126,7 @@ class HmsScenario:
         source_control: Optional[str] = None,
         time_interval_minutes: Optional[int] = None,
         copy_precipitation: bool = True,
+        include_generated_outputs: bool = False,
         overwrite: bool = False,
         hms_exe_path: Optional[Union[str, Path]] = None,
     ) -> HmsScenarioWorkspace:
@@ -129,6 +135,12 @@ class HmsScenario:
         ``start_time`` and ``end_time`` must already be expressed in the HMS
         project's local/model time zone.  Time-zone conversion belongs in the
         calling orchestrator, where the scenario contract is available.
+
+        By default, the clone excludes root-level HMS computation artifacts
+        and the root ``results`` directory. Required model inputs in nested
+        folders, including DSS files under ``data``, remain part of the clone.
+        Set ``include_generated_outputs=True`` only when historical results
+        are intentionally needed in the scenario workspace.
         """
         source_folder = HmsScenario._resolve_project_folder(source_project)
         forcing_source = Path(precipitation_dss).resolve()
@@ -154,7 +166,14 @@ class HmsScenario:
             shutil.rmtree(workspace_path)
 
         workspace_path.parent.mkdir(parents=True, exist_ok=True)
-        HmsUtils.copy_project(source_folder, workspace_path)
+        copy_ignore = None
+        if not include_generated_outputs:
+            copy_ignore = HmsScenario._generated_output_ignore(source_folder)
+        HmsUtils.copy_project(
+            source_folder,
+            workspace_path,
+            ignore=copy_ignore,
+        )
 
         project = HmsPrj().initialize(workspace_path, hms_exe_path=hms_exe_path)
         run_config = project.get_run_configuration(source_run)
@@ -250,6 +269,11 @@ class HmsScenario:
             precipitation_pathname=precipitation_pathname,
             output_dss=output_dir / f"{slug}_hms.dss",
             log_file=workspace_path / f"{slug}_hms.log",
+            clone_policy=(
+                "full-project-copy"
+                if include_generated_outputs
+                else "input-only"
+            ),
         )
         HmsScenario.validate_workspace(artifact)
         logger.info("Prepared HMS scenario workspace: %s", workspace_path)
@@ -293,6 +317,52 @@ class HmsScenario:
         return checks
 
     @staticmethod
+    def _generated_output_ignore(source_folder: Path):
+        """Return a copy filter for root-level HMS computation artifacts."""
+        source_root = source_folder.resolve()
+        project_dss_names: set[str] = set()
+        project_file = HmsPrj.find_hms_project(source_root)
+        if project_file is not None:
+            project_content = project_file.read_text(
+                encoding="utf-8",
+                errors="ignore",
+            )
+            for match in re.finditer(
+                r"^\s*DSS File Name:\s*(.+?)\s*$",
+                project_content,
+                flags=re.IGNORECASE | re.MULTILINE,
+            ):
+                referenced = Path(match.group(1).replace("\\", "/"))
+                if len(referenced.parts) == 1:
+                    project_dss_names.add(referenced.name.lower())
+        generated_suffixes = (
+            ".dss",
+            ".dsc",
+            ".dsc.h5",
+            ".log",
+            ".out",
+        )
+
+        def ignore(directory: str, names: list[str]) -> set[str]:
+            current = Path(directory).resolve()
+            if current != source_root:
+                return set()
+            ignored = set()
+            for name in names:
+                lowered = name.lower()
+                if lowered == "results":
+                    ignored.add(name)
+                elif lowered in project_dss_names:
+                    continue
+                elif lowered.endswith(generated_suffixes):
+                    ignored.add(name)
+                elif lowered.endswith(".dss.cyberducksegment"):
+                    ignored.add(name)
+            return ignored
+
+        return ignore
+
+    @staticmethod
     @log_call
     def execute(
         workspace: HmsScenarioWorkspace,
@@ -316,7 +386,40 @@ class HmsScenario:
         finished = datetime.now(timezone.utc)
         dss_exists = workspace.output_dss.is_file()
         dss_size = workspace.output_dss.stat().st_size if dss_exists else 0
-        status = "succeeded" if success and dss_size > 0 else "failed"
+        log_text = ""
+        if workspace.log_file.is_file():
+            log_text = workspace.log_file.read_text(
+                encoding="utf-8",
+                errors="replace",
+            )
+        completion_marker = re.search(
+            rf'^NOTE 15302:\s+Finished computing simulation run '
+            rf'"{re.escape(workspace.run_name)}"',
+            log_text,
+            flags=re.MULTILINE,
+        )
+        abort_marker = re.search(
+            rf'^WARNING 15303:\s+Aborted run '
+            rf'"{re.escape(workspace.run_name)}"',
+            log_text,
+            flags=re.MULTILINE,
+        )
+        error_count = sum(
+            1
+            for line in log_text.splitlines()
+            if line.lstrip().startswith("ERROR")
+        )
+        completed = completion_marker is not None
+        aborted = abort_marker is not None
+        status = (
+            "succeeded"
+            if success
+            and dss_size > 0
+            and completed
+            and not aborted
+            and error_count == 0
+            else "failed"
+        )
         return HmsRunArtifact(
             scenario_id=workspace.scenario_id,
             status=status,
@@ -328,6 +431,10 @@ class HmsScenario:
             finished_at=finished.isoformat().replace("+00:00", "Z"),
             dss_exists=dss_exists,
             dss_size_bytes=dss_size,
+            process_succeeded=success,
+            completion_marker_found=completed,
+            abort_marker_found=aborted,
+            error_count=error_count,
         )
 
     @staticmethod
