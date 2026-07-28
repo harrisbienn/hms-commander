@@ -112,6 +112,14 @@ Core areas:
 - Treat HMS process completion and downstream qualification as separate gates. A non-empty output DSS is necessary but does not prove that every required hydrograph exists, spans the RAS window, uses the expected interval/units, or is mapped to an active RAS geometry boundary.
 - For scenario execution, require the exact HMS completion marker, reject abort/error markers, and catalog the output DSS before declaring the hydrologic handoff ready.
 - An HMS-to-RAS handoff record should enumerate every required pathname and include first/last timestamp, interval, units, missing/NaN/negative-value checks, peak/recession notes, and the intended RAS boundary selector.
+- Use `HmsResultsProducts.export()` for a deterministic, package-owned hydrologic
+  handoff. Its manifest and portable hydrograph table are the stable input to
+  cross-repository catalog assembly; orchestration code must not recreate these
+  DSS qualification rules.
+- HEC-DSS can retain a Windows advisory lock after read operations. Capture the
+  source checksum before extraction and verify stable size, modification time,
+  and file identity afterward; do not shut down a caller-owned JVM merely to
+  reopen the source for a second checksum.
 - Keep inactive or inherited RAS boundary references out of the successful-mapping count. Record them explicitly as unresolved and let the owning study decide whether they are required, removed, or supplied by an approved non-HMS source.
 - Do not edit generated `.agents/skills/` links when integration guidance changes. Update the allowlisted source skill under `.claude/skills/` and regenerate the bridge.
 

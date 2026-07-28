@@ -47,11 +47,27 @@ Execution completion is not yet a qualified RAS handoff.
 Enumerate the complete required-path set. Do not sample one outlet or infer DSS
 paths from element names.
 
-```python
-from hms_commander import HmsDss, HmsResults
+Build the target crosswalk first, then export the exact required paths through
+the package-owned contract:
 
-catalog = HmsDss.get_catalog(dss_file)
-flows = HmsResults.get_outflow_timeseries(dss_file, "Watershed_Outlet")
+```python
+from hms_commander import HmsResultsProducts
+
+required = [
+    {
+        "mapping_id": "upstream-001",
+        "pathname": "//WATERSHED_OUTLET/FLOW//5Minute/RUN:DESIGN_STORM/",
+        "river": "River",
+        "reach": "Reach",
+        "station": "1000",
+    }
+]
+
+manifest = HmsResultsProducts.export(
+    dss_file,
+    required,
+    "products/design-storm/hydrology",
+)
 ```
 
 For every required pathname, preserve:
@@ -86,7 +102,9 @@ mapping count.
 
 ### 4. Prepare the Handoff Record
 
-The record should contain:
+`hydrologic-products.json`, `hydrologic-qualification.json`, and
+`hydrologic-hydrographs.csv` are the package-owned handoff record. They should
+contain:
 
 - source and derivative DSS paths plus provenance or checksum;
 - required pathname inventory and validation results;
@@ -95,6 +113,11 @@ The record should contain:
 - exact RAS selectors and geometry-match status;
 - approved non-HMS source-gage inputs, if any; and
 - unresolved mappings and their disposition.
+
+Do not reconstruct these facts in cross-repository orchestration code.
+Downstream systems should consume and checksum-verify the product manifest.
+The manifest intentionally leaves the study's hydrologic-handoff gate
+unevaluated.
 
 ### 5. Continue in ras-commander
 
@@ -138,6 +161,8 @@ An execution can pass while a later state remains conditional.
 
 - `hms_commander/HmsScenario.py` - scenario construction and execution evidence
 - `hms_commander/HmsResults.py` - flow extraction and statistics
+- `hms_commander/HmsResultsProducts.py` - deterministic hydrologic handoff
+  products and qualification evidence
 - `hms_commander/HmsDss.py` - DSS catalog and time-series operations
 - `hms_commander/HmsGeo.py` - spatial reference exports
 - `ras-commander/ras_commander/RasScenario.py` - RAS-side preparation contract

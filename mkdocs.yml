@@ -149,6 +149,7 @@ nav:
           - HmsDss: api/hms_dss.md
           - HmsDssGrid: api/hms_dss_grid.md
           - HmsResults: api/hms_results.md
+          - HmsResultsProducts: api/hms_results_products.md
       - Geospatial:
           - HmsGeo: api/hms_geo.md
           - HmsSqlite: api/hms_sqlite.md

@@ -20,6 +20,12 @@ This directory contains the public Python package for HMS automation.
 - Input-only project clones must exclude generated result artifacts unless an input DSS is explicitly referenced by project configuration.
 - Run success checks must require the exact HMS completion marker, reject abort/error markers, and verify a non-empty output DSS. Downstream readiness additionally requires catalog and time-series validation.
 - HMS-to-RAS helpers must preserve exact DSS pathname, time window, interval, units, element identity, and target boundary metadata; do not infer a successful hydraulic mapping from element names alone.
+- `HmsResultsProducts` owns deterministic scenario handoff products. Keep its
+  asset keys and filenames stable, reject incomplete or invalid required
+  hydrographs, preserve duplicate pathnames when they intentionally feed
+  multiple target mappings, and never mutate the source DSS.
+- Product manifests report mechanical qualification facts. They must keep the
+  engineering handoff decision as a separate, explicit gate.
 
 ## Tests
 

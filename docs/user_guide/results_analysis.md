@@ -86,6 +86,45 @@ HmsResults.export_results_to_csv(
 # Creates: peaks.csv, volumes.csv, hydrographs/*.csv
 ```
 
+## Export a Qualified HMS-to-RAS Product Package
+
+Use `HmsResultsProducts` when another system needs a stable, auditable
+hydrologic handoff instead of an exploratory collection of CSV files. Supply
+the exact required DSS pathnames and a unique mapping identifier for every RAS
+target. The same pathname may appear more than once when one HMS element
+intentionally supplies multiple boundaries.
+
+```python
+from hms_commander import HmsResultsProducts
+
+mappings = [
+    {
+        "mapping_id": "upstream-001",
+        "pathname": "//OUTLET/FLOW//5Minute/RUN:SCENARIO-001/",
+        "ras_boundary": "Upstream BC",
+    }
+]
+
+manifest = HmsResultsProducts.export(
+    "scenario-output.dss",
+    mappings,
+    "products/scenario-001/hydrology",
+)
+```
+
+The output directory must not already exist. It contains:
+
+- `hydrologic-hydrographs.csv`, a deterministic portable table;
+- `hydrologic-qualification.json`, with pathname, time, interval, units,
+  missing/sentinel/negative counts, peak, and recession evidence; and
+- `hydrologic-products.json`, a checksum-pinned product manifest suitable for
+  downstream STAC asset assembly.
+
+The operation also inventories precipitation-excess pathnames in the source
+DSS. A successful export means the stated mechanical checks completed; it does
+not make the hydrologic handoff acceptable by itself. The owning study must
+evaluate and record that gate separately.
+
 ## Multi-Run Comparison Workflow
 
 ```python
@@ -131,10 +170,14 @@ else:
 - **Statistics** - `get_hydrograph_statistics()` - Comprehensive metrics
 - **Comparison** - `compare_runs()` - Multi-run analysis
 - **Export** - `export_results_to_csv()` - CSV output
+- **Scenario handoff** - `HmsResultsProducts.export()` - Deterministic,
+  qualified HMS-to-RAS products
 
 ## Related Topics
 
 - [API Reference: HmsResults](../api/hms_results.md) - Complete method documentation
+- [API Reference: HmsResultsProducts](../api/hms_results_products.md) -
+  Scenario product contract
 - [DSS Operations](dss_operations.md) - Working with DSS files
 - [Clone Workflows](clone_workflows.md) - QAQC comparison patterns
 - [Execution](execution.md) - Running simulations

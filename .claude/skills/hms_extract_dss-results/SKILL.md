@@ -5,12 +5,13 @@ harness_scope: shared
 source_owner: gpt-cmdr
 security_review: internal
 description: |
-  Extracts and analyzes HEC-HMS simulation results from DSS files using HmsDss and
-  HmsResults classes. Handles peak flows, hydrographs, volume summaries, and time series
-  data. Leverages ras-commander's RasDss for DSS V6/V7 support. Use when processing
-  HMS results, extracting peak flows, analyzing hydrographs, computing volumes, exporting
-  time series, comparing multiple runs, or linking HMS results to HEC-RAS boundary
-  conditions.
+  Extracts and analyzes HEC-HMS simulation results from DSS files using HmsDss,
+  HmsResults, and HmsResultsProducts. Handles peak flows, hydrographs, volume
+  summaries, time series, and deterministic hydrologic product manifests.
+  Leverages ras-commander's RasDss for DSS V6/V7 support. Use when processing
+  HMS results, extracting peak flows, analyzing hydrographs, computing volumes,
+  exporting time series, comparing multiple runs, or linking HMS results to
+  HEC-RAS boundary conditions.
   Trigger keywords: DSS file, results, peak flow, hydrograph, time series, volume,
   extract results, HMS output, analyze results, compare runs.
 ---
@@ -26,8 +27,12 @@ You are the HMS results extraction specialist. Follow this post-simulation workf
 1. **User wants peak flows** → "Extract Peak Flows"
 2. **User wants hydrograph time series** → "Extract Hydrographs"
 3. **User wants to compare multiple runs** → "Compare Runs"
-4. **User wants to hand off results to RAS** → Delegate to `hms_link_to-ras` skill
-5. **DSS operations beyond results** → Delegate to `dss-integration-specialist` agent
+4. **User wants a deterministic scenario product** →
+   `HmsResultsProducts.export()`
+5. **User wants to hand off results to RAS** → Delegate to
+   `hms_link_to-ras` skill
+6. **DSS operations beyond results** → Delegate to
+   `dss-integration-specialist` agent
 
 ## Step 1: Locate the DSS File
 
@@ -84,6 +89,31 @@ than sampling one outlet. For every pathname, record:
 Preserve the exact pathname and element name in the evidence. Do not use peak
 flow alone as proof of temporal coverage.
 
+For a reusable product instead of an exploratory read, use the package-owned
+contract:
+
+```python
+from hms_commander import HmsResultsProducts
+
+manifest = HmsResultsProducts.export(
+    dss_file,
+    required_pathnames=[
+        {
+            "mapping_id": "boundary-001",
+            "pathname": "//OUTLET/FLOW//5Minute/RUN:SCENARIO-001/",
+            "ras_boundary": "Upstream BC",
+        }
+    ],
+    output_directory="products/scenario-001/hydrology",
+)
+```
+
+The output contains a deterministic portable hydrograph table, exact
+pathname/time/value/recession evidence, precipitation-excess inventory, and a
+checksum-pinned manifest. Preserve multiple mapping rows when one pathname
+intentionally supplies more than one RAS target. Do not treat the manifest's
+mechanical checks as the study's hydrologic-handoff acceptance decision.
+
 ## Volume Analysis
 
 ```python
@@ -123,6 +153,8 @@ Note: HmsDss wraps ras-commander's RasDss — requires `ras-commander` and `pyjn
 
 - `hms_commander/HmsDss.py` — DSS operations (wraps RasDss)
 - `hms_commander/HmsResults.py` — Results extraction and analysis
+- `hms_commander/HmsResultsProducts.py` — deterministic product and
+  qualification contract
 - `.claude/rules/hec-hms/dss-operations.md` — DSS patterns and pathname format
 
 ## Implementing Agent
