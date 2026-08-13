@@ -112,6 +112,43 @@ manifest = HmsResultsProducts.export(
 )
 ```
 
+## Audit gridded excess transfer
+
+Use `HmsSpatialTransfer` when gridded HMS incremental excess must be sampled
+onto another model's regular grid. The caller supplies portable source and
+target grid definitions plus the source precipitation fingerprint cube. The
+API reads the HMS result HDF and basin SQLite, resolves result columns to
+computation cells, and reports raw support, nearest-fill distance, area, and
+volume-effect metrics.
+
+`excess_depth_units` must match the incremental-excess dataset's HDF `units`
+attribute; the audit rejects a mismatch before calculating volume.
+
+Precipitation fingerprints need not be unique when every indistinguishable
+HMS result column has the same excess series, because the transfer is then
+permutation-invariant. The audit records those groups. It fails closed when
+an ambiguous assignment would change transferred excess.
+
+```python
+from hms_commander import HmsSpatialTransfer
+
+audit = HmsSpatialTransfer.audit_excess_to_grid(
+    "run/results.h5",
+    "run/basin.sqlite",
+    source_fingerprint_cube,
+    source_grid_definition,
+    target_grid_definition,
+    excess_depth_units="IN",
+    fingerprint_stride=12,
+    source_value_multiplier=1.0 / (12.0 * 25.4),
+)
+HmsSpatialTransfer.write_audit(audit, "products/spatial-transfer-audit.json")
+```
+
+The audit deliberately does not apply engineering thresholds or declare the
+transfer acceptable for forecasting. Those decisions belong to the consuming
+study's versioned qualification policy.
+
 The output directory must not already exist. It contains:
 
 - `hydrologic-hydrographs.csv`, a deterministic portable table;

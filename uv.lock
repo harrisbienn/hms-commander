@@ -1728,7 +1728,7 @@ wheels = [
 
 [[package]]
 name = "hms-commander"
-version = "0.3.0"
+version = "0.3.1"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -1745,6 +1745,7 @@ all = [
     { name = "black" },
     { name = "flake8" },
     { name = "geopandas" },
+    { name = "h5py" },
     { name = "hms2cng" },
     { name = "jupyter" },
     { name = "mkdocs" },
@@ -1764,6 +1765,8 @@ all = [
     { name = "rioxarray", version = "0.19.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "rioxarray", version = "0.21.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "s3fs" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.17.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "shapely" },
     { name = "xarray", version = "2025.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "xarray", version = "2025.11.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -1803,10 +1806,13 @@ dss = [
 ]
 gis = [
     { name = "geopandas" },
+    { name = "h5py" },
     { name = "pygeohydro" },
     { name = "pynhd" },
     { name = "pyproj", version = "3.7.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pyproj", version = "3.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.17.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "shapely" },
 ]
 
@@ -1815,6 +1821,7 @@ requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=22.0" },
     { name = "flake8", marker = "extra == 'dev'", specifier = ">=4.0" },
     { name = "geopandas", marker = "extra == 'gis'", specifier = ">=0.12.0" },
+    { name = "h5py", marker = "extra == 'gis'", specifier = ">=3.8.0" },
     { name = "hms-commander", extras = ["dev", "gis", "dss", "aorc", "docs", "cng"], marker = "extra == 'all'" },
     { name = "hms2cng", marker = "extra == 'cng'", specifier = ">=0.1.1" },
     { name = "jupyter", marker = "extra == 'dev'" },
@@ -1836,6 +1843,7 @@ requires-dist = [
     { name = "requests" },
     { name = "rioxarray", marker = "extra == 'aorc'", specifier = ">=0.13.0" },
     { name = "s3fs", marker = "extra == 'aorc'", specifier = ">=2023.1.0" },
+    { name = "scipy", marker = "extra == 'gis'", specifier = ">=1.10.0" },
     { name = "shapely", marker = "extra == 'gis'", specifier = ">=2.0.0" },
     { name = "tqdm" },
     { name = "xarray", marker = "extra == 'aorc'", specifier = ">=2023.1.0" },
