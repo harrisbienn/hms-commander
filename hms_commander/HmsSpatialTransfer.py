@@ -45,6 +45,22 @@ def _array_sha256(values: np.ndarray) -> str:
     return digest.hexdigest()
 
 
+def _hdf_text_attribute(dataset: Any, name: str, *, label: str) -> str:
+    raw = dataset.attrs.get(name)
+    if raw is None:
+        raise ValueError(f"{label} is missing HDF attribute {name!r}")
+    values = np.asarray(raw).reshape(-1)
+    if len(values) != 1:
+        raise ValueError(f"{label} HDF attribute {name!r} must be scalar")
+    value = values[0]
+    if isinstance(value, bytes):
+        value = value.decode("utf-8")
+    normalized = str(value).strip().upper()
+    if not normalized:
+        raise ValueError(f"{label} HDF attribute {name!r} must not be empty")
+    return normalized
+
+
 def _require_optional_dependencies() -> tuple[Any, Any, Any, Any, Any]:
     try:
         import geopandas as gpd
@@ -204,11 +220,11 @@ def _validate_permutation_invariant_ambiguities(
     tolerance: float,
     element_name: str,
 ) -> dict[str, Any]:
-    groups = _equivalent_fingerprint_groups(
+    source_groups = _equivalent_fingerprint_groups(
         source_fingerprints,
         tolerance=tolerance,
     )
-    for group in groups:
+    for group in source_groups:
         result_columns = result_for_cell[group]
         assigned_fingerprints = result_fingerprints[result_columns]
         if np.max(np.ptp(assigned_fingerprints, axis=0)) > tolerance:
@@ -222,10 +238,34 @@ def _validate_permutation_invariant_ambiguities(
                 f"Ambiguous fingerprints change transferred excess for "
                 f"{element_name!r}"
             )
+
+    result_groups = _equivalent_fingerprint_groups(
+        result_fingerprints,
+        tolerance=tolerance,
+    )
+    cell_for_result = np.empty(len(result_for_cell), dtype=int)
+    cell_for_result[result_for_cell] = np.arange(len(result_for_cell))
+    for group in result_groups:
+        assigned_sources = source_fingerprints[cell_for_result[group]]
+        if np.max(np.ptp(assigned_sources, axis=0)) > 2.0 * tolerance:
+            raise ValueError(
+                f"Ambiguous HMS result fingerprints do not map to equivalent "
+                f"source cells for {element_name!r}"
+            )
+        assigned_excess = excess[:, group]
+        if not np.all(assigned_excess == assigned_excess[:, :1]):
+            raise ValueError(
+                f"Ambiguous HMS result fingerprints change transferred excess "
+                f"for {element_name!r}"
+            )
     return {
-        "ambiguous_fingerprint_group_count": len(groups),
+        "ambiguous_fingerprint_group_count": len(source_groups),
         "ambiguously_identified_cell_count": int(
-            sum(len(group) for group in groups)
+            sum(len(group) for group in source_groups)
+        ),
+        "ambiguous_result_fingerprint_group_count": len(result_groups),
+        "ambiguously_identified_result_column_count": int(
+            sum(len(group) for group in result_groups)
         ),
         "ambiguities_are_permutation_invariant": True,
     }
@@ -409,7 +449,22 @@ class HmsSpatialTransfer:
                     computation_cells["subbasin"].astype(str).str.casefold()
                     == str(element_name).casefold()
                 ].copy()
-                excess = np.asarray(group[excess_dataset], dtype=np.float64)
+                excess_source = group[excess_dataset]
+                hdf_depth_units = _hdf_text_attribute(
+                    excess_source,
+                    "units",
+                    label=(
+                        f"HMS result element {element_name!r} dataset "
+                        f"{excess_dataset!r}"
+                    ),
+                )
+                if hdf_depth_units != normalized_depth_units:
+                    raise ValueError(
+                        f"HMS incremental excess units for {element_name!r} "
+                        f"are {hdf_depth_units!r}, not declared "
+                        f"{normalized_depth_units!r}"
+                    )
+                excess = np.asarray(excess_source, dtype=np.float64)
                 precipitation = np.asarray(
                     group[precipitation_dataset], dtype=np.float64
                 )

@@ -41,10 +41,11 @@ def audit_inputs(tmp_path, monkeypatch):
             "lwe_precipitation_rate",
             data=np.asarray([[0.2, 0.1], [0.2, 0.1]], dtype=np.float64),
         )
-        group.create_dataset(
+        excess = group.create_dataset(
             "Incremental Excess",
             data=np.asarray([[2.0, 1.0], [2.0, 1.0]], dtype=np.float64),
         )
+        excess.attrs["units"] = "IN"
 
     sqlite_path = tmp_path / "basin.sqlite"
     sqlite_path.write_bytes(b"representative HMS SQLite identity")
@@ -222,7 +223,30 @@ def test_audit_accepts_permutation_invariant_ambiguity(audit_inputs):
     element = audit["fingerprint"]["elements"]["Basin"]
     assert element["ambiguous_fingerprint_group_count"] == 1
     assert element["ambiguously_identified_cell_count"] == 2
+    assert element["ambiguous_result_fingerprint_group_count"] == 1
+    assert element["ambiguously_identified_result_column_count"] == 2
     assert element["ambiguities_are_permutation_invariant"] is True
+
+
+def test_audit_rejects_result_side_fingerprint_ambiguity(audit_inputs):
+    hdf_path, sqlite_path, fingerprint_cube = audit_inputs
+    nearly_equal_sources = fingerprint_cube.copy()
+    nearly_equal_sources[:, 1, 0] = 0.1000015
+    with File(hdf_path, "r+") as hdf:
+        hdf["results/Basin/lwe_precipitation_rate"][:, :] = 0.10000075
+
+    with pytest.raises(
+        ValueError,
+        match="HMS result fingerprints change transferred excess",
+    ):
+        HmsSpatialTransfer.audit_excess_to_grid(
+            hdf_path,
+            sqlite_path,
+            nearly_equal_sources,
+            _grid("source-grid"),
+            _grid("target-grid"),
+            excess_depth_units="IN",
+        )
 
 
 def test_audit_rejects_incompatible_grid_crs(audit_inputs):
@@ -252,6 +276,20 @@ def test_audit_rejects_unknown_excess_depth_units(audit_inputs):
             _grid("source-grid"),
             _grid("target-grid"),
             excess_depth_units="FT",
+        )
+
+
+def test_audit_rejects_declared_units_that_disagree_with_hdf(audit_inputs):
+    hdf_path, sqlite_path, fingerprint_cube = audit_inputs
+
+    with pytest.raises(ValueError, match="are 'IN', not declared 'MM'"):
+        HmsSpatialTransfer.audit_excess_to_grid(
+            hdf_path,
+            sqlite_path,
+            fingerprint_cube,
+            _grid("source-grid"),
+            _grid("target-grid"),
+            excess_depth_units="MM",
         )
 
 

@@ -121,6 +121,9 @@ API reads the HMS result HDF and basin SQLite, resolves result columns to
 computation cells, and reports raw support, nearest-fill distance, area, and
 volume-effect metrics.
 
+`excess_depth_units` must match the incremental-excess dataset's HDF `units`
+attribute; the audit rejects a mismatch before calculating volume.
+
 Precipitation fingerprints need not be unique when every indistinguishable
 HMS result column has the same excess series, because the transfer is then
 permutation-invariant. The audit records those groups. It fails closed when
