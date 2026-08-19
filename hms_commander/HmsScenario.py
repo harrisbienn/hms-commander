@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
+from ._parsing import HmsFileParser
 from .Decorators import log_call
 from .HmsCmdr import HmsCmdr
 from .HmsControl import HmsControl
@@ -137,10 +138,10 @@ class HmsScenario:
         calling orchestrator, where the scenario contract is available.
 
         By default, the clone excludes root-level HMS computation artifacts
-        and the root ``results`` directory. Required model inputs in nested
-        folders, including DSS files under ``data``, remain part of the clone.
-        Set ``include_generated_outputs=True`` only when historical results
-        are intentionally needed in the scenario workspace.
+        and the root ``results`` directory. Root-level DSS files referenced by
+        HMS input configuration and required model inputs in nested folders
+        remain part of the clone. Set ``include_generated_outputs=True`` only
+        when historical results are intentionally needed in the workspace.
         """
         source_folder = HmsScenario._resolve_project_folder(source_project)
         forcing_source = Path(precipitation_dss).resolve()
@@ -320,21 +321,7 @@ class HmsScenario:
     def _generated_output_ignore(source_folder: Path):
         """Return a copy filter for root-level HMS computation artifacts."""
         source_root = source_folder.resolve()
-        project_dss_names: set[str] = set()
-        project_file = HmsPrj.find_hms_project(source_root)
-        if project_file is not None:
-            project_content = project_file.read_text(
-                encoding="utf-8",
-                errors="ignore",
-            )
-            for match in re.finditer(
-                r"^\s*DSS File Name:\s*(.+?)\s*$",
-                project_content,
-                flags=re.IGNORECASE | re.MULTILINE,
-            ):
-                referenced = Path(match.group(1).replace("\\", "/"))
-                if len(referenced.parts) == 1:
-                    project_dss_names.add(referenced.name.lower())
+        input_dss_names = HmsScenario._root_dss_input_names(source_root)
         generated_suffixes = (
             ".dss",
             ".dsc",
@@ -352,15 +339,51 @@ class HmsScenario:
                 lowered = name.lower()
                 if lowered == "results":
                     ignored.add(name)
-                elif lowered in project_dss_names:
+                elif lowered in input_dss_names:
                     continue
-                elif lowered.endswith(generated_suffixes):
-                    ignored.add(name)
-                elif lowered.endswith(".dss.cyberducksegment"):
+                elif lowered.endswith(generated_suffixes) or lowered.endswith(
+                    ".dss.cyberducksegment"
+                ):
                     ignored.add(name)
             return ignored
 
         return ignore
+
+    @staticmethod
+    def _root_dss_input_names(source_root: Path) -> set[str]:
+        """Return root DSS files referenced by HMS input configuration.
+
+        Run files are deliberately excluded because their ``DSS File`` values
+        identify generated computation outputs, not model inputs.
+        """
+        input_config_suffixes = {
+            ".basin",
+            ".control",
+            ".gage",
+            ".grid",
+            ".hms",
+            ".met",
+            ".pdata",
+            ".regn",
+        }
+        input_dss_names: set[str] = set()
+        reference_pattern = re.compile(
+            r"^\s*(?:DSS File(?: Name)?|Filename):\s*(.+?\.dss)\s*$",
+            flags=re.IGNORECASE | re.MULTILINE,
+        )
+
+        for config_file in source_root.iterdir():
+            if not config_file.is_file():
+                continue
+            if config_file.suffix.lower() not in input_config_suffixes:
+                continue
+            content = HmsFileParser.read_file(config_file)
+            for match in reference_pattern.finditer(content):
+                referenced = Path(match.group(1).replace("\\", "/"))
+                if len(referenced.parts) == 1:
+                    input_dss_names.add(referenced.name.lower())
+
+        return input_dss_names
 
     @staticmethod
     @log_call

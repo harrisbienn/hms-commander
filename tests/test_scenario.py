@@ -87,6 +87,34 @@ Grid: BaselineGrid
        DSS Pathname: /HRAP/BASIN/PRECIP///STAGEIV/
      End Variant: Variant-1
 End:
+
+Grid: RootInputGrid
+     Grid Type: Precipitation
+     Description: Root DSS input
+     Data Source Type: External DSS
+     Variant: Variant-1
+       Default Variant: Yes
+       DSS File Name: root_grid_input.dss
+       DSS Pathname: /HRAP/ROOT/PRECIP///STAGEIV/
+     End Variant: Variant-1
+End:
+""",
+        encoding="utf-8",
+    )
+    (folder / "Example.gage").write_text(
+        """Gage: ObservedFlow
+     Gage Type: Discharge Gage
+     Data Source Type: External DSS
+     Filename: root_gage_input.dss
+     Pathname: //BASIN/OBS-FLOW/01JAN2020/15MIN/OBS/
+End:
+
+Gage: LegacyObservedFlow
+     Gage Type: Discharge Gage
+     Data Source Type: External DSS
+     DSS File: root_legacy_gage_input.dss
+     Pathname: //BASIN/LEGACY-FLOW/01JAN2020/15MIN/OBS/
+End:
 """,
         encoding="utf-8",
     )
@@ -94,6 +122,10 @@ End:
     (folder / "results" / "old_run.h5").write_bytes(b"generated results")
     (folder / "baseline.dss").write_bytes(b"generated root output")
     (folder / "project_data.dss").write_bytes(b"required paired data")
+    (folder / "root_grid_input.dss").write_bytes(b"required grid input")
+    (folder / "root_gage_input.dss").write_bytes(b"required gage input")
+    (folder / "root_legacy_gage_input.dss").write_bytes(b"required legacy input")
+    (folder / "unreferenced.dss").write_bytes(b"unreferenced root artifact")
     (folder / "baseline.log").write_text("generated log", encoding="utf-8")
     (folder / "baseline.out").write_text("generated report", encoding="utf-8")
     (folder / "data").mkdir()
@@ -134,6 +166,16 @@ def test_prepare_workspace_clones_and_rewires_without_mutating_source(tmp_path):
     assert (
         prepared.project_folder / "project_data.dss"
     ).read_bytes() == b"required paired data"
+    assert (
+        prepared.project_folder / "root_grid_input.dss"
+    ).read_bytes() == b"required grid input"
+    assert (
+        prepared.project_folder / "root_gage_input.dss"
+    ).read_bytes() == b"required gage input"
+    assert (
+        prepared.project_folder / "root_legacy_gage_input.dss"
+    ).read_bytes() == b"required legacy input"
+    assert not (prepared.project_folder / "unreferenced.dss").exists()
     assert not (prepared.project_folder / "baseline.log").exists()
     assert not (prepared.project_folder / "baseline.out").exists()
     assert (
