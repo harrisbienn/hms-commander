@@ -5,6 +5,8 @@ import importlib
 import importlib.resources
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -444,7 +446,36 @@ def test_installed_engine_executes_one_scenario(tmp_path):
     result_path = tmp_path / "result.json"
     request_path.write_text(json.dumps(request), encoding="utf-8")
 
-    assert HmsScenarioWorker.run(request_path, result_path) == 0
+    # Exercise the worker's process boundary so HMS/JVM state cannot leak into
+    # the pytest process used to validate the returned contract.
+    worker_environment = os.environ.copy()
+    worker_environment["PYTHONIOENCODING"] = "utf-8"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "hms_commander.HmsScenarioWorker",
+            "--request",
+            str(request_path),
+            "--result",
+            str(result_path),
+        ],
+        capture_output=True,
+        check=False,
+        encoding="utf-8",
+        errors="replace",
+        env=worker_environment,
+        timeout=request["execution"]["timeout_seconds"] + 60,
+    )
+    assert completed.returncode == 0, (
+        "Installed HMS scenario worker failed.\n"
+        f"stdout:\n{completed.stdout}\n"
+        f"stderr:\n{completed.stderr}"
+    )
+    assert "Windows fatal exception" not in completed.stderr
     result = json.loads(result_path.read_text(encoding="utf-8"))
     assert result["status"] == "succeeded"
+    assert result["execution"]["completion_marker_found"] is True
+    assert all(result["preparation"]["checks"].values())
+    assert result["products"]["status"]["all_required_pathnames_read"] is True
     assert Path(result["preparation"]["workspace"]["project_file"]).is_file()
