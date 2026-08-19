@@ -91,11 +91,15 @@ Documentation = "https://gpt-cmdr.github.io/hms-commander/"
 Repository = "https://github.com/gpt-cmdr/hms-commander"
 Issues = "https://github.com/gpt-cmdr/hms-commander/issues"
 
+[project.scripts]
+hms-scenario-worker = "hms_commander.HmsScenarioWorker:main"
+
 [tool.setuptools]
 packages = ["hms_commander", "hms_commander.data", "hms_commander.dss"]
 
 [tool.setuptools.package-data]
 "hms_commander.data" = ["*.npy", "*.csv"]
+"hms_commander" = ["contracts/*.schema.json"]
 
 [tool.setuptools.package-dir]
 hms_commander = "hms_commander"

@@ -500,7 +500,8 @@ JythonHms.Exit(0)
         capture_output: bool = True,
         max_memory: str = None,
         initial_memory: str = None,
-        additional_java_opts: Optional[List[str]] = None
+        additional_java_opts: Optional[List[str]] = None,
+        raise_on_timeout: bool = False
     ) -> Tuple[bool, str, str]:
         """
         Execute a Jython script using HEC-HMS via direct Java invocation.
@@ -519,6 +520,8 @@ JythonHms.Exit(0)
             initial_memory: Initial JVM heap size (default: "128M")
             additional_java_opts: Extra JVM options
                         Examples: ["-XX:+UseG1GC", "-XX:MaxGCPauseMillis=200"]
+            raise_on_timeout: Raise ``TimeoutError`` instead of returning a
+                        failed status when the HMS subprocess exceeds timeout.
 
         Returns:
             Tuple of (success: bool, stdout: str, stderr: str)
@@ -621,6 +624,12 @@ JythonHms.Exit(0)
                     initial_memory=initial_memory,
                     additional_java_opts=additional_java_opts
                 )
+
+            if not success and stderr == f"Timeout after {timeout} seconds":
+                if raise_on_timeout:
+                    raise TimeoutError(
+                        f"HEC-HMS execution exceeded {timeout} seconds"
+                    )
 
             if success:
                 logger.info(f"HMS {version_str} script executed successfully")

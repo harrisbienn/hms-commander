@@ -8,6 +8,7 @@ include pyproject.toml
 # Include the package
 recursive-include hms_commander *.py
 recursive-include hms_commander/data *.npy *.csv *.md
+recursive-include hms_commander/contracts *.schema.json
 
 # Exclude test projects (large files, users download via HmsExamples)
 prune tests/projects
