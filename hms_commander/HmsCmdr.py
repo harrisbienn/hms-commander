@@ -49,7 +49,8 @@ class HmsCmdr:
         save_project: bool = True,
         max_memory: str = None,
         initial_memory: str = None,
-        additional_java_opts: Optional[List[str]] = None
+        additional_java_opts: Optional[List[str]] = None,
+        raise_on_timeout: bool = False
     ) -> bool:
         """
         Execute a single HEC-HMS simulation run.
@@ -67,6 +68,8 @@ class HmsCmdr:
             initial_memory: Initial JVM heap size (default: "128M")
             additional_java_opts: Extra JVM options
                        Examples: ["-XX:+UseG1GC", "-XX:MaxGCPauseMillis=200"]
+            raise_on_timeout: Raise ``TimeoutError`` instead of returning
+                       ``False`` when execution exceeds ``timeout``.
 
         Returns:
             True if computation succeeded, False otherwise
@@ -122,7 +125,8 @@ class HmsCmdr:
             timeout=timeout,
             max_memory=max_memory,
             initial_memory=initial_memory,
-            additional_java_opts=additional_java_opts
+            additional_java_opts=additional_java_opts,
+            raise_on_timeout=raise_on_timeout
         )
 
         if success:

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "hms-commander/scenario-worker-result/1.0",
+  "title": "HMS Commander scenario worker result 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "status",
+    "scenario",
+    "request",
+    "preparation",
+    "execution",
+    "output_dss",
+    "products",
+    "raw_qualification",
+    "timings",
+    "warnings",
+    "error"
+  ],
+  "properties": {
+    "schema": {"const": "hms-commander/scenario-worker-result/1.0"},
+    "status": {"enum": ["succeeded", "failed"]},
+    "scenario": {"type": "object"},
+    "request": {"type": "object"},
+    "preparation": {"type": "object"},
+    "execution": {"type": "object"},
+    "output_dss": {"type": ["object", "null"]},
+    "products": {"type": ["object", "null"]},
+    "raw_qualification": {"type": ["object", "null"]},
+    "timings": {"type": "object"},
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "error": {"type": ["object", "null"]}
+  }
+}

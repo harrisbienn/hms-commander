@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "hms-commander/scenario-worker-request/1.0",
+  "title": "HMS Commander scenario worker request 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "scenario",
+    "source_model",
+    "forcing",
+    "model_window",
+    "workspace",
+    "products",
+    "execution"
+  ],
+  "properties": {
+    "schema": {"const": "hms-commander/scenario-worker-request/1.0"},
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scenario_id", "specification_sha256"],
+      "properties": {
+        "scenario_id": {"type": "string", "minLength": 1},
+        "specification_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "source_model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project", "project_file_sha256", "run", "grid"],
+      "properties": {
+        "project": {"type": "string", "minLength": 1},
+        "project_file_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "run": {"type": "string", "minLength": 1},
+        "grid": {"type": "string", "minLength": 1},
+        "met": {"type": "string", "minLength": 1},
+        "control": {"type": "string", "minLength": 1}
+      }
+    },
+    "forcing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dss", "sha256", "pathname"],
+      "properties": {
+        "dss": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "pathname": {"type": "string", "minLength": 1}
+      }
+    },
+    "model_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end", "time_zone", "interval_minutes"],
+      "properties": {
+        "start": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$"
+        },
+        "end": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$"
+        },
+        "time_zone": {"type": "string", "minLength": 1},
+        "interval_minutes": {"type": "integer", "minimum": 1}
+      }
+    },
+    "workspace": {"type": "string", "minLength": 1},
+    "products": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["directory", "required_pathnames"],
+      "properties": {
+        "directory": {"type": "string", "minLength": 1},
+        "required_pathnames": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["mapping_id", "pathname"],
+            "properties": {
+              "mapping_id": {"type": "string", "minLength": 1},
+              "pathname": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "qualification_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sentinel_threshold": {"type": "number", "exclusiveMaximum": 0},
+            "maximum_final_to_peak_ratio": {"type": "number", "minimum": 0},
+            "minimum_post_peak_hours": {"type": "number", "minimum": 0}
+          }
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timeout_seconds"],
+      "properties": {
+        "timeout_seconds": {"type": "integer", "minimum": 1},
+        "hms_executable": {"type": "string", "minLength": 1},
+        "max_memory": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

@@ -138,6 +138,7 @@ HmsJython.execute_script(script, hms_exe_path="path/to/hms", max_memory="8G")
 
 ## Related Topics
 
+- [Scenario Worker](scenario_worker.md) - Versioned process boundary for one isolated scenario
 - [API Reference: HmsCmdr](../api/hms_cmdr.md) - Execution methods
 - [API Reference: HmsJython](../api/hms_jython.md) - Jython script generation
 - [Run Configuration](run_configuration.md) - Setting up runs

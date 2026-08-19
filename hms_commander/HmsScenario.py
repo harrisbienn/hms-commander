@@ -382,6 +382,7 @@ class HmsScenario:
             hms_object=project,
             timeout=timeout,
             max_memory=max_memory,
+            raise_on_timeout=True,
         )
         finished = datetime.now(timezone.utc)
         dss_exists = workspace.output_dss.is_file()
