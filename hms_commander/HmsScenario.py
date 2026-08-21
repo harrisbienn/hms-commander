@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +20,7 @@ from ._parsing import HmsFileParser
 from .Decorators import log_call
 from .HmsCmdr import HmsCmdr
 from .HmsControl import HmsControl
+from .HmsGage import HmsGage
 from .HmsGrid import HmsGrid
 from .HmsMet import HmsMet
 from .HmsPrj import HmsPrj
@@ -47,6 +49,7 @@ class HmsScenarioWorkspace:
     output_dss: Path
     log_file: Path
     clone_policy: str = "input-only"
+    gage_inputs: tuple[Dict[str, str], ...] = ()
 
     def to_dict(self) -> Dict[str, Any]:
         """Return a JSON-serializable workspace record."""
@@ -125,6 +128,7 @@ class HmsScenario:
         *,
         source_met: Optional[str] = None,
         source_control: Optional[str] = None,
+        gage_inputs: Optional[Iterable[Mapping[str, Any]]] = None,
         time_interval_minutes: Optional[int] = None,
         copy_precipitation: bool = True,
         include_generated_outputs: bool = False,
@@ -177,6 +181,12 @@ class HmsScenario:
         )
 
         project = HmsPrj().initialize(workspace_path, hms_exe_path=hms_exe_path)
+        staged_gage_inputs = HmsScenario._stage_gage_inputs(
+            workspace_path,
+            gage_inputs or (),
+        )
+        if staged_gage_inputs:
+            project.initialize(workspace_path, hms_exe_path=hms_exe_path)
         run_config = project.get_run_configuration(source_run)
         if not run_config:
             raise ValueError(f"Source run '{source_run}' was not found")
@@ -275,6 +285,7 @@ class HmsScenario:
                 if include_generated_outputs
                 else "input-only"
             ),
+            gage_inputs=staged_gage_inputs,
         )
         HmsScenario.validate_workspace(artifact)
         logger.info("Prepared HMS scenario workspace: %s", workspace_path)
@@ -492,6 +503,73 @@ class HmsScenario:
         if not slug:
             raise ValueError("scenario_id must contain at least one letter or number")
         return slug[:48]
+
+    @staticmethod
+    def _stage_gage_inputs(
+        workspace: Path,
+        inputs: Iterable[Mapping[str, Any]],
+    ) -> tuple[Dict[str, str], ...]:
+        values = tuple(inputs)
+        if not values:
+            return ()
+        gage_files = sorted(workspace.glob("*.gage"))
+        if len(gage_files) != 1:
+            raise ValueError(
+                "Expected one project .gage file for gage input overrides, "
+                f"found {len(gage_files)}"
+            )
+        gage_file = gage_files[0]
+        destination_root = workspace / "forcing" / "gages"
+        destination_root.mkdir(parents=True, exist_ok=True)
+        copied: dict[str, Path] = {}
+        staged: list[Dict[str, str]] = []
+        for value in values:
+            gage_name = str(value["gage_name"])
+            source = Path(str(value["dss"])).resolve()
+            pathname = str(value["pathname"])
+            if not source.is_file():
+                raise FileNotFoundError(f"Gage input DSS file not found: {source}")
+            destination = destination_root / source.name
+            folded_name = source.name.casefold()
+            prior_source = copied.get(folded_name)
+            if prior_source is not None and prior_source != source:
+                raise ValueError(
+                    f"Gage input DSS basenames collide: {prior_source} and {source}"
+                )
+            if prior_source is None:
+                shutil.copy2(source, destination)
+                copied[folded_name] = source
+            relative = HmsScenario._windows_relative_path(
+                destination.relative_to(workspace)
+            )
+            HmsGage.update_gage(
+                gage_file,
+                gage_name,
+                dss_file=relative,
+                pathname=pathname,
+            )
+            updated = HmsGage.get_gage_info(gage_name, gage_file)
+            updated_file = updated.get(
+                "Filename",
+                updated.get("DSS File Name", ""),
+            )
+            updated_pathname = updated.get(
+                "Pathname",
+                updated.get("DSS Pathname", ""),
+            )
+            if updated_file != relative or updated_pathname != pathname:
+                raise ValueError(
+                    f"Gage input override did not round trip for {gage_name!r}"
+                )
+            staged.append(
+                {
+                    "gage_name": gage_name,
+                    "source": str(source),
+                    "staged": str(destination),
+                    "pathname": pathname,
+                }
+            )
+        return tuple(staged)
 
     @staticmethod
     def _windows_relative_path(path: Path) -> str:

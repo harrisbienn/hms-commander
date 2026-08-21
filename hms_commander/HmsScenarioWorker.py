@@ -137,6 +137,7 @@ class HmsScenarioWorker:
                     _parse_model_time(model_window["end"]),
                     source_met=source_model.get("met"),
                     source_control=source_model.get("control"),
+                    gage_inputs=request.get("gage_inputs", ()),
                     time_interval_minutes=model_window["interval_minutes"],
                     copy_precipitation=True,
                     include_generated_outputs=False,
@@ -302,8 +303,9 @@ class HmsScenarioWorker:
             "products",
             "execution",
         }
+        optional = {"gage_inputs"}
         missing = sorted(required - set(payload))
-        unknown = sorted(set(payload) - required)
+        unknown = sorted(set(payload) - required - optional)
         if missing or unknown:
             details = []
             if missing:
@@ -373,6 +375,66 @@ class HmsScenarioWorker:
             "sha256": _sha256_string(forcing["sha256"], "forcing.sha256"),
             "pathname": _nonempty_string(forcing["pathname"], "forcing.pathname"),
         }
+
+        raw_gage_inputs = payload.get("gage_inputs", [])
+        if not isinstance(raw_gage_inputs, list):
+            raise HmsScenarioWorkerError(
+                "gage_inputs must be an array",
+                classification="invalid_request",
+                exit_code=2,
+            )
+        normalized_gage_inputs: list[Dict[str, Any]] = []
+        for index, raw_value in enumerate(raw_gage_inputs):
+            value = _object(raw_value, f"gage_inputs[{index}]")
+            _require_keys(
+                value,
+                required={"gage_name", "dss", "sha256", "pathname"},
+                optional=set(),
+                label=f"gage_inputs[{index}]",
+            )
+            pathname = _nonempty_string(
+                value["pathname"],
+                f"gage_inputs[{index}].pathname",
+            )
+            parts = (
+                pathname[1:-1].split("/")
+                if pathname.startswith("/") and pathname.endswith("/")
+                else []
+            )
+            if len(parts) != 6:
+                raise HmsScenarioWorkerError(
+                    f"gage_inputs[{index}].pathname must contain six DSS parts",
+                    classification="invalid_request",
+                    exit_code=2,
+                )
+            normalized_gage_inputs.append(
+                {
+                    "gage_name": _nonempty_string(
+                        value["gage_name"],
+                        f"gage_inputs[{index}].gage_name",
+                    ),
+                    "dss": str(
+                        Path(
+                            _nonempty_string(
+                                value["dss"],
+                                f"gage_inputs[{index}].dss",
+                            )
+                        ).resolve()
+                    ),
+                    "sha256": _sha256_string(
+                        value["sha256"],
+                        f"gage_inputs[{index}].sha256",
+                    ),
+                    "pathname": pathname,
+                }
+            )
+        gage_names = [value["gage_name"].casefold() for value in normalized_gage_inputs]
+        if len(gage_names) != len(set(gage_names)):
+            raise HmsScenarioWorkerError(
+                "gage_inputs gage_name values must be unique",
+                classification="invalid_request",
+                exit_code=2,
+            )
 
         model_window = _object(payload["model_window"], "model_window")
         _require_keys(
@@ -506,7 +568,7 @@ class HmsScenarioWorker:
                 execution["max_memory"], "execution.max_memory"
             )
 
-        return {
+        normalized_request = {
             "schema": HmsScenarioWorker.REQUEST_SCHEMA,
             "scenario": {
                 "scenario_id": scenario_id,
@@ -529,6 +591,9 @@ class HmsScenarioWorker:
             },
             "execution": normalized_execution,
         }
+        if "gage_inputs" in payload:
+            normalized_request["gage_inputs"] = normalized_gage_inputs
+        return normalized_request
 
     @staticmethod
     def _verify_input_identities(request: Mapping[str, Any]) -> None:
@@ -546,6 +611,26 @@ class HmsScenarioWorker:
                 classification="forcing_identity",
                 exit_code=2,
             )
+
+        verified_gage_files: dict[Path, str] = {}
+        for index, gage_input in enumerate(request.get("gage_inputs", [])):
+            path = Path(gage_input["dss"])
+            if not path.is_file():
+                raise HmsScenarioWorkerError(
+                    f"Gage input DSS does not exist: {path}",
+                    classification="gage_input_identity",
+                    exit_code=2,
+                )
+            actual = verified_gage_files.get(path)
+            if actual is None:
+                actual = _sha256(path)
+                verified_gage_files[path] = actual
+            if actual != gage_input["sha256"]:
+                raise HmsScenarioWorkerError(
+                    f"Gage input DSS checksum does not match for gage_inputs[{index}]",
+                    classification="gage_input_identity",
+                    exit_code=2,
+                )
 
         project = Path(request["source_model"]["project"])
         project_folder = project.parent if project.is_file() else project

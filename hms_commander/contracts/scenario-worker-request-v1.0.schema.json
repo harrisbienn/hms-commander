@@ -54,6 +54,20 @@
         "pathname": {"type": "string", "minLength": 1}
       }
     },
+    "gage_inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["gage_name", "dss", "sha256", "pathname"],
+        "properties": {
+          "gage_name": {"type": "string", "minLength": 1},
+          "dss": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "pathname": {"type": "string", "minLength": 1}
+        }
+      }
+    },
     "model_window": {
       "type": "object",
       "additionalProperties": false,

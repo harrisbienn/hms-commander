@@ -43,6 +43,14 @@ request has this form:
     "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
     "pathname": "/AORC-TRANSPOSED/SHG_1000/PRECIPITATION///INCREMENTAL/"
   },
+  "gage_inputs": [
+    {
+      "gage_name": "MVK_Ouachita",
+      "dss": "C:\\runs\\inputs\\qualification-gages.dss",
+      "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "pathname": "//OUJ_OUACHITAATFELSENTHAL/FLOW//1HOUR/QUALIFICATION/"
+    }
+  ],
   "model_window": {
     "start": "2019-09-18T13:00:00",
     "end": "2019-09-19T13:00:00",
@@ -75,8 +83,12 @@ portable scientific identity from the exact local worker invocation.
 
 The model timestamps are naive HMS local/model times. `time_zone` records the
 interpretation explicitly; the worker does not perform time-zone conversion.
-The forcing DSS and source `.hms` project file are checksum-verified before the
-workspace is created.
+The forcing DSS, each optional `gage_inputs` DSS, and the source `.hms` project
+file are checksum-verified before the workspace is created. Gage inputs are
+copied below the isolated workspace and only the named cloned `.gage` entries
+are rewired. Unknown or duplicate gages, ambiguous project gage files, checksum
+drift, and colliding input basenames fail closed; the canonical model is never
+edited.
 
 ## Result Contract
 
