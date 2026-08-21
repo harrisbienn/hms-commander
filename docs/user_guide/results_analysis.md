@@ -145,6 +145,38 @@ audit = HmsSpatialTransfer.audit_excess_to_grid(
 HmsSpatialTransfer.write_audit(audit, "products/spatial-transfer-audit.json")
 ```
 
+For an executable handoff, use `export_excess_to_grid`. It authenticates and
+reads the forcing-grid fingerprint family, transfers every HMS incremental-
+excess frame, and writes one immutable target-grid DSS plus checksum-pinned
+audit and manifest files. The DSS write runs in an isolated child process so
+native file locks are released before the parent hashes the product.
+
+```python
+manifest = HmsSpatialTransfer.export_excess_to_grid(
+    "run/results/RUN_Scenario.h5",
+    "run/2021_Existing_Conditions.sqlite",
+    "inputs/stormhub-forcing.dss",
+    "/SHG/GRID/PRECIPITATION///AORC-TRANSPOSED/",
+    source_grid_definition,
+    target_grid_definition,
+    "products/spatial-transfer/ras-gridded-excess.dss",
+    "/SHG/BASIN/PRECIPITATION///EXCESS/",
+    model_start=model_start,
+    model_end=model_end,
+    model_interval_minutes=5,
+    source_interval_minutes=60,
+    excess_depth_units="IN",
+    source_value_multiplier=1.0 / 304.8,
+)
+```
+
+`HmsScenarioWorker` can perform this export after a successful HMS run when
+its versioned request includes `spatial_transfer`. That object pins the basin
+SQLite, both grid-definition files, selector, intervals, conversion factor,
+and qualification-only disposition. The worker result exposes the product
+manifest, DSS, audit, metrics, selector, and record count for downstream
+orchestration without reopening the HMS result HDF.
+
 The audit deliberately does not apply engineering thresholds or declare the
 transfer acceptable for forecasting. Those decisions belong to the consuming
 study's versioned qualification policy.

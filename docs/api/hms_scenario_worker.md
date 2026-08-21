@@ -3,6 +3,12 @@
 Versioned process boundary for isolated scenario preparation, execution, and
 hydrologic product export.
 
+An optional authenticated `spatial_transfer` request causes the worker to
+export the run's incremental excess as a qualification-only target-grid DSS.
+The resulting manifest, audit, and DSS identities are included under
+`products.spatial_transfer`; consuming orchestrators should use that boundary
+instead of reopening HMS HDF or selecting raw excess pathnames.
+
 ::: hms_commander.HmsScenarioWorker
     options:
       show_root_heading: true

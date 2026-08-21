@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from datetime import datetime
 
 import numpy as np
+import pandas as pd
 import pytest
 
 pytest.importorskip("geopandas")
@@ -13,8 +15,9 @@ pytest.importorskip("h5py")
 pytest.importorskip("scipy")
 from geopandas import GeoDataFrame
 from h5py import File
-from hms_commander import HmsSpatialTransfer, HmsSqlite
 from shapely.geometry import box
+
+from hms_commander import HmsSpatialTransfer, HmsSqlite
 
 pytestmark = pytest.mark.requires_gis
 
@@ -308,3 +311,193 @@ def test_audit_allows_non_finite_values_outside_active_cells(audit_inputs):
     )
 
     assert audit["metrics"]["active_hms_cell_count"] == 2
+
+
+def test_read_fingerprint_cube_authenticates_grid_and_window(
+    tmp_path,
+    monkeypatch,
+):
+    from ras_commander import RasDss
+
+    source = tmp_path / "forcing.dss"
+    source.write_bytes(b"forcing")
+    pathnames = [
+        "/A/B/PRECIPITATION/01JAN2020:0000/01JAN2020:0100/F/",
+        "/A/B/PRECIPITATION/01JAN2020:0100/01JAN2020:0200/F/",
+    ]
+    monkeypatch.setattr(
+        RasDss,
+        "get_catalog",
+        staticmethod(lambda _: pd.DataFrame({"pathname": pathnames})),
+    )
+    monkeypatch.setattr(
+        RasDss,
+        "read_grid",
+        staticmethod(
+            lambda _source, pathname: {
+                "shape": (2, 2),
+                "cell_size": 1.0,
+                "crs": "EPSG:3857",
+                "data": np.asarray(
+                    [
+                        [pathnames.index(pathname) + 1.0, np.nan],
+                        [pathnames.index(pathname) + 1.0] * 2,
+                    ]
+                ),
+                "metadata": {"origin": (0.0, 0.0)},
+            }
+        ),
+    )
+
+    cube, evidence = HmsSpatialTransfer.read_fingerprint_cube(
+        source,
+        "/A/B/PRECIPITATION///F/",
+        _grid("source-grid"),
+        model_start=datetime(2020, 1, 1),
+        model_end=datetime(2020, 1, 1, 2),
+        interval_minutes=60,
+    )
+
+    assert cube.shape == (2, 2, 2)
+    assert cube[0, 0, 0] == 1.0
+    assert cube[1, 0, 0] == 2.0
+    assert np.isnan(cube[0, 0, 1])
+    assert evidence["record_count"] == 2
+    assert evidence["source_dss"]["sha256"]
+    assert evidence["cube_sha256"]
+    assert HmsSpatialTransfer._grid_time("01JAN2020:2400") == datetime(
+        2020,
+        1,
+        2,
+    )
+
+
+def test_read_fingerprint_cube_rejects_grid_drift(tmp_path, monkeypatch):
+    from ras_commander import RasDss
+
+    source = tmp_path / "forcing.dss"
+    source.write_bytes(b"forcing")
+    pathname = "/A/B/PRECIPITATION/01JAN2020:0000/01JAN2020:0100/F/"
+    monkeypatch.setattr(
+        RasDss,
+        "get_catalog",
+        staticmethod(lambda _: pd.DataFrame({"pathname": [pathname]})),
+    )
+    monkeypatch.setattr(
+        RasDss,
+        "read_grid",
+        staticmethod(
+            lambda *_: {
+                "shape": (2, 2),
+                "cell_size": 1.0,
+                "crs": "EPSG:3857",
+                "data": np.ones((2, 2)),
+                "metadata": {"origin": (1.0, 0.0)},
+            }
+        ),
+    )
+
+    with pytest.raises(ValueError, match="grid definition has drifted"):
+        HmsSpatialTransfer.read_fingerprint_cube(
+            source,
+            "/A/B/PRECIPITATION///F/",
+            _grid("source-grid"),
+            model_start=datetime(2020, 1, 1),
+            model_end=datetime(2020, 1, 1, 1),
+            interval_minutes=60,
+        )
+
+
+def test_export_excess_grid_writes_identity_bound_product(
+    audit_inputs,
+    tmp_path,
+    monkeypatch,
+):
+    hdf_path, sqlite_path, fingerprint_cube = audit_inputs
+    source = tmp_path / "forcing.dss"
+    source.write_bytes(b"forcing")
+    source_evidence = {
+        "source_dss": {
+            "path": str(source),
+            "size_bytes": source.stat().st_size,
+            "sha256": "1" * 64,
+        },
+        "source_grid": _grid("source-grid"),
+        "pathname_selector": "/A/B/PRECIPITATION///F/",
+        "record_count": 2,
+        "start": "2020-01-01T00:00:00",
+        "end": "2020-01-01T00:02:00",
+        "interval_minutes": 1,
+        "first_pathname": "first",
+        "last_pathname": "last",
+        "cube_sha256": "2" * 64,
+    }
+    monkeypatch.setattr(
+        HmsSpatialTransfer,
+        "read_fingerprint_cube",
+        staticmethod(lambda *args, **kwargs: (fingerprint_cube, source_evidence)),
+    )
+
+    written_frames: list[tuple[int, int, int]] = []
+
+    def write_grid(output, selector, frames, boundaries, grid_info):
+        written_frames.append(frames.shape)
+        output.write_bytes(b"transferred grid")
+        return {
+            "status": "succeeded",
+            "record_count": 2,
+            "first_pathname": (
+                "/A/B/PRECIPITATION/01JAN2020:0000/01JAN2020:0001/EXCESS/"
+            ),
+            "last_pathname": (
+                "/A/B/PRECIPITATION/01JAN2020:0001/01JAN2020:0002/EXCESS/"
+            ),
+        }
+
+    monkeypatch.setattr(
+        HmsSpatialTransfer,
+        "_write_grid_subprocess",
+        staticmethod(write_grid),
+    )
+    output = tmp_path / "products" / "ras-excess.dss"
+    manifest = HmsSpatialTransfer.export_excess_to_grid(
+        hdf_path,
+        sqlite_path,
+        source,
+        "/A/B/PRECIPITATION///F/",
+        _grid("source-grid"),
+        _grid("target-grid"),
+        output,
+        "/A/B/PRECIPITATION///EXCESS/",
+        model_start=datetime(2020, 1, 1),
+        model_end=datetime(2020, 1, 1, 0, 2),
+        model_interval_minutes=1,
+        source_interval_minutes=1,
+        excess_depth_units="IN",
+        source_value_multiplier=1.0,
+    )
+
+    assert written_frames == [(2, 2, 2)]
+    assert manifest["schema"] == "hms-commander/gridded-excess-product/1.0"
+    assert manifest["status"] == "qualification_only"
+    assert manifest["forecast_eligible"] is False
+    assert manifest["output"]["record_count"] == 2
+    assert output.with_suffix(".audit.json").is_file()
+    assert output.with_suffix(".manifest.json").is_file()
+    with pytest.raises(FileExistsError, match="Refusing to overwrite"):
+        HmsSpatialTransfer.export_excess_to_grid(
+            hdf_path,
+            sqlite_path,
+            source,
+            "/A/B/PRECIPITATION///F/",
+            _grid("source-grid"),
+            _grid("target-grid"),
+            output,
+            "/A/B/PRECIPITATION///EXCESS/",
+            model_start=datetime(2020, 1, 1),
+            model_end=datetime(2020, 1, 1, 0, 2),
+            model_interval_minutes=1,
+            source_interval_minutes=1,
+            excess_depth_units="IN",
+            source_value_multiplier=1.0,
+        )
