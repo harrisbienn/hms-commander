@@ -152,6 +152,7 @@ examples/upstream_analysis_outputs/
 
 # pytest cache
 .pytest-tmp/
+/.t[0-9]*/
 
 # test temp
 .test-tmp/
