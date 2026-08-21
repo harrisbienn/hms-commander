@@ -1,7 +1,7 @@
 """Tests for immutable HMS scenario workspace preparation."""
 
-from datetime import datetime
 import importlib
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -137,6 +137,8 @@ def test_prepare_workspace_clones_and_rewires_without_mutating_source(tmp_path):
     source = _write_project(tmp_path / "source")
     forcing = tmp_path / "rank001.dss"
     forcing.write_bytes(b"not-a-real-dss")
+    gage_input = tmp_path / "qualification-gages.dss"
+    gage_input.write_bytes(b"not-a-real-gage-dss")
     original_files = {
         path.name: path.read_bytes()
         for path in source.iterdir()
@@ -153,6 +155,13 @@ def test_prepare_workspace_clones_and_rewires_without_mutating_source(tmp_path):
         "/AORC-TRANSPOSED/SHG_1000/PRECIPITATION///INCREMENTAL/",
         datetime(2019, 9, 18, 13, 0),
         datetime(2019, 9, 19, 13, 0),
+        gage_inputs=[
+            {
+                "gage_name": "ObservedFlow",
+                "dss": str(gage_input),
+                "pathname": "//BASIN/OBS-FLOW//15MIN/QUALIFICATION/",
+            }
+        ],
         time_interval_minutes=5,
     )
 
@@ -161,6 +170,9 @@ def test_prepare_workspace_clones_and_rewires_without_mutating_source(tmp_path):
     assert prepared.output_dss.parent.is_dir()
     assert prepared.output_dss.name == "lwi-r3-rank-001_hms.dss"
     assert prepared.clone_policy == "input-only"
+    assert prepared.gage_inputs[0]["gage_name"] == "ObservedFlow"
+    staged_gage = prepared.project_folder / "forcing" / "gages" / gage_input.name
+    assert staged_gage.read_bytes() == b"not-a-real-gage-dss"
     assert not (prepared.project_folder / "results").exists()
     assert not (prepared.project_folder / "baseline.dss").exists()
     assert (
@@ -190,6 +202,7 @@ def test_prepare_workspace_clones_and_rewires_without_mutating_source(tmp_path):
         prepared.project_folder / f"{prepared.control_name}.control"
     ).read_text(encoding="utf-8")
     run = (prepared.project_folder / "Example.run").read_text(encoding="utf-8")
+    gage = (prepared.project_folder / "Example.gage").read_text(encoding="utf-8")
 
     assert f"Precip Grid Name: {prepared.grid_name}" in met
     assert f"Grid: {prepared.grid_name}" in grid
@@ -198,6 +211,8 @@ def test_prepare_workspace_clones_and_rewires_without_mutating_source(tmp_path):
     assert "Time Interval: 5" in control
     assert f"Run: {prepared.run_name}" in run
     assert f"DSS File: output\\{prepared.output_dss.name}" in run
+    assert "Filename: forcing\\gages\\qualification-gages.dss" in gage
+    assert "Pathname: //BASIN/OBS-FLOW//15MIN/QUALIFICATION/" in gage
     cloned_run_block = run.split(f"Run: {prepared.run_name}", maxsplit=1)[1]
     assert "Last Execution Date:" not in cloned_run_block
     assert "Last Execution Time:" not in cloned_run_block

@@ -223,6 +223,47 @@ def test_worker_rejects_invalid_forcing_identity(tmp_path):
     assert not Path(request["workspace"]).exists()
 
 
+def test_worker_authenticates_gage_input_identity(tmp_path, monkeypatch):
+    request, request_path, result_path = _request(tmp_path)
+    gage_input = tmp_path / "qualification-gages.dss"
+    gage_input.write_bytes(b"gage input")
+    request["gage_inputs"] = [
+        {
+            "gage_name": "MVK_Ouachita",
+            "dss": str(gage_input),
+            "sha256": _sha256(gage_input),
+            "pathname": "//OUJ_OUACHITAATFELSENTHAL/FLOW//1HOUR/QUALIFICATION/",
+        }
+    ]
+    request_path.write_text(json.dumps(request), encoding="utf-8")
+    _install_success_fakes(monkeypatch, request)
+
+    assert HmsScenarioWorker.run(request_path, result_path) == 0
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    assert result["status"] == "succeeded"
+    assert result["request"]["sha256"]
+
+
+def test_worker_rejects_gage_input_checksum_drift(tmp_path):
+    request, request_path, result_path = _request(tmp_path)
+    gage_input = tmp_path / "qualification-gages.dss"
+    gage_input.write_bytes(b"gage input")
+    request["gage_inputs"] = [
+        {
+            "gage_name": "MVK_Ouachita",
+            "dss": str(gage_input),
+            "sha256": "f" * 64,
+            "pathname": "//OUJ_OUACHITAATFELSENTHAL/FLOW//1HOUR/QUALIFICATION/",
+        }
+    ]
+    request_path.write_text(json.dumps(request), encoding="utf-8")
+
+    assert HmsScenarioWorker.run(request_path, result_path) == 2
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    assert result["error"]["classification"] == "gage_input_identity"
+    assert not Path(request["workspace"]).exists()
+
+
 def test_worker_refuses_an_existing_workspace(tmp_path):
     request, request_path, result_path = _request(tmp_path)
     Path(request["workspace"]).mkdir()
