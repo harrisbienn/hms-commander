@@ -92,6 +92,17 @@ def _install_success_fakes(monkeypatch, request: dict) -> dict[str, int]:
             'NOTE 15302: Finished computing simulation run "FF_lwi-r3-rank-001"\n',
             encoding="utf-8",
         )
+        if request.get("spatial_transfer") is not None:
+            transfer = request["spatial_transfer"]
+            basin_source = Path(request["source_model"]["project"]) / transfer[
+                "basin_sqlite"
+            ]
+            (workspace_path / transfer["basin_sqlite"]).write_bytes(
+                basin_source.read_bytes()
+            )
+            results = workspace_path / "results"
+            results.mkdir()
+            (results / "RUN_FF_lwi-r3-rank-001.h5").write_bytes(b"result hdf")
         return HmsScenarioWorkspace(
             scenario_id="lwi-r3-rank-001",
             source_project=Path(request["source_model"]["project"]),
@@ -174,6 +185,38 @@ def _install_success_fakes(monkeypatch, request: dict) -> dict[str, int]:
         "export",
         staticmethod(export),
     )
+    if request.get("spatial_transfer") is not None:
+        calls["transfer"] = 0
+
+        def export_transfer(*args, **kwargs):
+            calls["transfer"] += 1
+            output = Path(args[6])
+            output.parent.mkdir(parents=True)
+            output.write_bytes(b"ras gridded excess")
+            audit = output.with_suffix(".audit.json")
+            audit.write_text("{}", encoding="utf-8")
+            manifest_path = output.with_suffix(".manifest.json")
+            manifest = {
+                "schema": "hms-commander/gridded-excess-product/1.0",
+                "status": "qualification_only",
+                "forecast_eligible": False,
+                "output": {
+                    "pathname_selector": args[7],
+                    "record_count": 288,
+                },
+                "metrics": {
+                    "direct_target_cell_count": 2,
+                    "unsupported_target_cell_count": 2,
+                },
+            }
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            return manifest
+
+        monkeypatch.setattr(
+            worker_module.HmsSpatialTransfer,
+            "export_excess_to_grid",
+            staticmethod(export_transfer),
+        )
     return calls
 
 
@@ -261,6 +304,78 @@ def test_worker_rejects_gage_input_checksum_drift(tmp_path):
     assert HmsScenarioWorker.run(request_path, result_path) == 2
     result = json.loads(result_path.read_text(encoding="utf-8"))
     assert result["error"]["classification"] == "gage_input_identity"
+    assert not Path(request["workspace"]).exists()
+
+
+def test_worker_exports_authenticated_spatial_transfer(tmp_path, monkeypatch):
+    request, request_path, result_path = _request(tmp_path)
+    source = Path(request["source_model"]["project"])
+    basin_sqlite = source / "basin.sqlite"
+    basin_sqlite.write_bytes(b"basin geometry")
+    source_grid = tmp_path / "source-grid.json"
+    source_grid.write_text('{"definition_id":"source"}', encoding="utf-8")
+    target_grid = tmp_path / "target-grid.json"
+    target_grid.write_text('{"definition_id":"target"}', encoding="utf-8")
+    request["spatial_transfer"] = {
+        "basin_sqlite": "basin.sqlite",
+        "basin_sqlite_sha256": _sha256(basin_sqlite),
+        "source_grid_definition": str(source_grid),
+        "source_grid_definition_sha256": _sha256(source_grid),
+        "target_grid_definition": str(target_grid),
+        "target_grid_definition_sha256": _sha256(target_grid),
+        "output_pathname": "/SHG/BASIN/PRECIPITATION///EXCESS/",
+        "source_interval_minutes": 60,
+        "source_value_multiplier": 1.0 / (12.0 * 25.4),
+        "fingerprint_tolerance": 1.0e-6,
+        "excess_depth_units": "IN",
+        "status": "qualification_only",
+        "forecast_eligible": False,
+    }
+    request_path.write_text(json.dumps(request), encoding="utf-8")
+    calls = _install_success_fakes(monkeypatch, request)
+
+    assert HmsScenarioWorker.run(request_path, result_path) == 0
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    transfer = result["products"]["spatial_transfer"]
+    assert transfer["schema"] == "hms-commander/gridded-excess-product/1.0"
+    assert transfer["status"] == "qualification_only"
+    assert transfer["forecast_eligible"] is False
+    assert transfer["record_count"] == 288
+    assert transfer["output"]["sha256"]
+    assert transfer["manifest"]["sha256"]
+    assert transfer["audit"]["sha256"]
+    assert calls == {"prepare": 1, "execute": 1, "export": 1, "transfer": 1}
+
+
+def test_worker_rejects_spatial_transfer_identity_drift(tmp_path):
+    request, request_path, result_path = _request(tmp_path)
+    source = Path(request["source_model"]["project"])
+    basin_sqlite = source / "basin.sqlite"
+    basin_sqlite.write_bytes(b"basin geometry")
+    source_grid = tmp_path / "source-grid.json"
+    source_grid.write_text("{}", encoding="utf-8")
+    target_grid = tmp_path / "target-grid.json"
+    target_grid.write_text("{}", encoding="utf-8")
+    request["spatial_transfer"] = {
+        "basin_sqlite": "basin.sqlite",
+        "basin_sqlite_sha256": "f" * 64,
+        "source_grid_definition": str(source_grid),
+        "source_grid_definition_sha256": _sha256(source_grid),
+        "target_grid_definition": str(target_grid),
+        "target_grid_definition_sha256": _sha256(target_grid),
+        "output_pathname": "/SHG/BASIN/PRECIPITATION///EXCESS/",
+        "source_interval_minutes": 60,
+        "source_value_multiplier": 1.0,
+        "fingerprint_tolerance": 1.0e-6,
+        "excess_depth_units": "IN",
+        "status": "qualification_only",
+        "forecast_eligible": False,
+    }
+    request_path.write_text(json.dumps(request), encoding="utf-8")
+
+    assert HmsScenarioWorker.run(request_path, result_path) == 2
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    assert result["error"]["classification"] == "spatial_transfer_identity"
     assert not Path(request["workspace"]).exists()
 
 

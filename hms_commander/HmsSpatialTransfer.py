@@ -5,7 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import subprocess
+import sys
+import tempfile
 from collections.abc import Mapping
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -316,8 +320,7 @@ class HmsSpatialTransfer:
     SCHEMA = "hms-commander/spatial-transfer-audit/1.0"
 
     @staticmethod
-    @log_call
-    def audit_excess_to_grid(
+    def _transfer_excess_to_grid(
         hms_result_hdf: str | Path,
         hms_basin_sqlite: str | Path,
         source_fingerprint_cube: np.ndarray,
@@ -331,7 +334,7 @@ class HmsSpatialTransfer:
         result_group: str = "results",
         excess_dataset: str = "Incremental Excess",
         precipitation_dataset: str = "lwe_precipitation_rate",
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], np.ndarray]:
         """Audit nearest-fill transfer of HMS incremental excess.
 
         The caller supplies portable source and target grid definitions plus a
@@ -683,7 +686,388 @@ class HmsSpatialTransfer:
             },
         }
         report["audit_sha256"] = _canonical_sha256(report)
+        return report, transferred
+
+    @staticmethod
+    @log_call
+    def audit_excess_to_grid(
+        hms_result_hdf: str | Path,
+        hms_basin_sqlite: str | Path,
+        source_fingerprint_cube: np.ndarray,
+        source_grid_definition: Mapping[str, Any],
+        target_grid_definition: Mapping[str, Any],
+        *,
+        excess_depth_units: str,
+        fingerprint_stride: int = 1,
+        source_value_multiplier: float = 1.0,
+        fingerprint_tolerance: float = 1.0e-6,
+        result_group: str = "results",
+        excess_dataset: str = "Incremental Excess",
+        precipitation_dataset: str = "lwe_precipitation_rate",
+    ) -> dict[str, Any]:
+        """Return content-addressed raw metrics for one excess-grid transfer."""
+        report, _ = HmsSpatialTransfer._transfer_excess_to_grid(
+            hms_result_hdf,
+            hms_basin_sqlite,
+            source_fingerprint_cube,
+            source_grid_definition,
+            target_grid_definition,
+            excess_depth_units=excess_depth_units,
+            fingerprint_stride=fingerprint_stride,
+            source_value_multiplier=source_value_multiplier,
+            fingerprint_tolerance=fingerprint_tolerance,
+            result_group=result_group,
+            excess_dataset=excess_dataset,
+            precipitation_dataset=precipitation_dataset,
+        )
         return report
+
+    @staticmethod
+    @log_call
+    def read_fingerprint_cube(
+        source_dss: str | Path,
+        pathname_selector: str,
+        source_grid_definition: Mapping[str, Any],
+        *,
+        model_start: datetime,
+        model_end: datetime,
+        interval_minutes: int,
+    ) -> tuple[np.ndarray, dict[str, Any]]:
+        """Read and authenticate a regular source-forcing grid family."""
+        try:
+            from pyproj import CRS
+            from ras_commander import RasDss
+        except ImportError as exc:  # pragma: no cover - optional environment
+            raise ImportError(
+                "Grid transfer export requires hms-commander[gis,dss]"
+            ) from exc
+        source = Path(source_dss).resolve()
+        if not source.is_file():
+            raise FileNotFoundError(f"Source fingerprint DSS does not exist: {source}")
+        source_stat = source.stat()
+        source_sha256 = _sha256_file(source)
+        if interval_minutes <= 0 or model_end <= model_start:
+            raise ValueError("Source fingerprint window or interval is invalid")
+        selector_parts = HmsSpatialTransfer._pathname_parts(pathname_selector)
+        if selector_parts[3] or selector_parts[4]:
+            raise ValueError("Source fingerprint selector D and E parts must be blank")
+        normalized_grid = _grid_definition(
+            source_grid_definition,
+            label="source grid definition",
+            crs_factory=CRS,
+        )
+        catalog = RasDss.get_catalog(source)
+        records: list[tuple[datetime, datetime, str]] = []
+        for raw_pathname in catalog["pathname"].astype(str):
+            parts = HmsSpatialTransfer._pathname_parts(raw_pathname)
+            if any(
+                parts[index].casefold() != selector_parts[index].casefold()
+                for index in (0, 1, 2, 5)
+            ):
+                continue
+            start = HmsSpatialTransfer._grid_time(parts[3])
+            end = HmsSpatialTransfer._grid_time(parts[4])
+            if model_start <= start and end <= model_end:
+                records.append((start, end, raw_pathname))
+        records.sort(key=lambda value: (value[0], value[1], value[2].casefold()))
+        if not records:
+            raise ValueError(
+                "Source fingerprint DSS has no records in the model window"
+            )
+        expected_count = int((model_end - model_start).total_seconds() // 60)
+        if expected_count % interval_minutes:
+            raise ValueError("Source fingerprint window is not interval-aligned")
+        expected_count //= interval_minutes
+        if len(records) != expected_count:
+            raise ValueError(
+                "Source fingerprint record count does not cover the model window: "
+                f"expected {expected_count}, found {len(records)}"
+            )
+        current = model_start
+        frames: list[np.ndarray] = []
+        pathname_evidence: list[str] = []
+        for start, end, pathname in records:
+            if start != current or end != start + timedelta(minutes=interval_minutes):
+                raise ValueError(
+                    "Source fingerprint DSS time coverage is not contiguous"
+                )
+            grid = RasDss.read_grid(source, pathname)
+            actual_origin = grid["metadata"].get("origin")
+            if (
+                list(grid["shape"]) != normalized_grid["shape"]
+                or not math.isclose(
+                    float(grid["cell_size"]),
+                    normalized_grid["cell_size_meters"],
+                )
+                or list(actual_origin or ()) != normalized_grid["origin"]
+                or not CRS.from_user_input(str(grid["crs"])).equals(
+                    CRS.from_user_input(normalized_grid["crs"])
+                )
+            ):
+                raise ValueError("Source fingerprint DSS grid definition has drifted")
+            values = np.asarray(grid["data"], dtype=np.float64)
+            finite = values[np.isfinite(values)]
+            if np.isinf(values).any() or (finite < 0).any():
+                raise ValueError(
+                    f"Source fingerprint grid contains invalid values: {pathname}"
+                )
+            frames.append(values)
+            pathname_evidence.append(pathname)
+            current = end
+        if current != model_end:
+            raise ValueError("Source fingerprint DSS does not end at the model window")
+        source_stat_after = source.stat()
+        if (
+            source_stat_after.st_size != source_stat.st_size
+            or source_stat_after.st_mtime_ns != source_stat.st_mtime_ns
+            or source_stat_after.st_ino != source_stat.st_ino
+        ):
+            raise RuntimeError("Source fingerprint DSS changed while it was read")
+        cube = np.stack(frames)
+        return cube, {
+            "source_dss": {
+                "path": str(source),
+                "size_bytes": source_stat.st_size,
+                "sha256": source_sha256,
+                "integrity_verification": {
+                    "pre_read": ["sha256", "size", "mtime_ns", "file_id"],
+                    "post_read": ["size", "mtime_ns", "file_id"],
+                    "status": "unchanged",
+                },
+            },
+            "source_grid": normalized_grid,
+            "pathname_selector": pathname_selector,
+            "record_count": len(records),
+            "start": model_start.isoformat(timespec="seconds"),
+            "end": model_end.isoformat(timespec="seconds"),
+            "interval_minutes": interval_minutes,
+            "first_pathname": pathname_evidence[0],
+            "last_pathname": pathname_evidence[-1],
+            "cube_sha256": _array_sha256(cube),
+        }
+
+    @staticmethod
+    @log_call
+    def export_excess_to_grid(
+        hms_result_hdf: str | Path,
+        hms_basin_sqlite: str | Path,
+        source_dss: str | Path,
+        source_pathname_selector: str,
+        source_grid_definition: Mapping[str, Any],
+        target_grid_definition: Mapping[str, Any],
+        output_dss: str | Path,
+        output_pathname_selector: str,
+        *,
+        model_start: datetime,
+        model_end: datetime,
+        model_interval_minutes: int,
+        source_interval_minutes: int,
+        excess_depth_units: str,
+        source_value_multiplier: float,
+        fingerprint_tolerance: float = 1.0e-6,
+    ) -> dict[str, Any]:
+        """Export one immutable, qualification-only RAS-grid excess product."""
+        output = Path(output_dss).resolve()
+        audit_path = output.with_suffix(".audit.json")
+        manifest_path = output.with_suffix(".manifest.json")
+        for destination in (output, audit_path, manifest_path):
+            if destination.exists():
+                raise FileExistsError(f"Refusing to overwrite: {destination}")
+        if model_interval_minutes <= 0 or source_interval_minutes <= 0:
+            raise ValueError("Transfer intervals must be positive")
+        if source_interval_minutes % model_interval_minutes:
+            raise ValueError("Source interval must be a whole model-interval multiple")
+        HmsSpatialTransfer._validate_family_selector(output_pathname_selector)
+        source_cube, source_evidence = HmsSpatialTransfer.read_fingerprint_cube(
+            source_dss,
+            source_pathname_selector,
+            source_grid_definition,
+            model_start=model_start,
+            model_end=model_end,
+            interval_minutes=source_interval_minutes,
+        )
+        stride = source_interval_minutes // model_interval_minutes
+        audit, transferred = HmsSpatialTransfer._transfer_excess_to_grid(
+            hms_result_hdf,
+            hms_basin_sqlite,
+            source_cube,
+            source_grid_definition,
+            target_grid_definition,
+            excess_depth_units=excess_depth_units,
+            fingerprint_stride=stride,
+            source_value_multiplier=source_value_multiplier,
+            fingerprint_tolerance=fingerprint_tolerance,
+        )
+        target = audit["target_grid"]
+        rows, columns = target["shape"]
+        frames = transferred.reshape((len(transferred), rows, columns))
+        expected_steps = int((model_end - model_start).total_seconds() // 60)
+        if expected_steps % model_interval_minutes:
+            raise ValueError("Model window is not transfer-interval aligned")
+        expected_steps //= model_interval_minutes
+        if len(frames) != expected_steps:
+            raise ValueError(
+                f"Transferred frame count is {len(frames)}, expected {expected_steps}"
+            )
+        boundaries = [
+            model_start + timedelta(minutes=model_interval_minutes * index)
+            for index in range(expected_steps + 1)
+        ]
+        output.parent.mkdir(parents=True, exist_ok=True)
+        write_result = HmsSpatialTransfer._write_grid_subprocess(
+            output,
+            output_pathname_selector,
+            frames,
+            boundaries,
+            {
+                "cell_size": target["cell_size_meters"],
+                "origin": target["origin"],
+                "crs": target["crs"],
+                "units": str(excess_depth_units).upper(),
+                "data_type": "PER-CUM",
+                "compression": "PRECIP_2_BYTE",
+                "interval_minutes": model_interval_minutes,
+            },
+        )
+        if write_result["record_count"] != expected_steps or not output.is_file():
+            raise RuntimeError("RAS-grid excess DSS write did not produce every frame")
+        HmsSpatialTransfer.write_audit(audit, audit_path)
+        manifest: dict[str, Any] = {
+            "schema": "hms-commander/gridded-excess-product/1.0",
+            "status": "qualification_only",
+            "forecast_eligible": False,
+            "method": audit["method"],
+            "source": source_evidence,
+            "hms_result_hdf": {
+                "path": str(Path(hms_result_hdf).resolve()),
+                "sha256": _sha256_file(Path(hms_result_hdf).resolve()),
+            },
+            "hms_basin_sqlite": {
+                "path": str(Path(hms_basin_sqlite).resolve()),
+                "sha256": _sha256_file(Path(hms_basin_sqlite).resolve()),
+            },
+            "target_grid": target,
+            "audit": {
+                "path": str(audit_path),
+                "sha256": _sha256_file(audit_path),
+                "audit_sha256": audit["audit_sha256"],
+            },
+            "output": {
+                "path": str(output),
+                "size_bytes": output.stat().st_size,
+                "sha256": _sha256_file(output),
+                "pathname_selector": output_pathname_selector,
+                "record_count": write_result["record_count"],
+                "first_pathname": write_result["first_pathname"],
+                "last_pathname": write_result["last_pathname"],
+                "start": model_start.isoformat(timespec="seconds"),
+                "end": model_end.isoformat(timespec="seconds"),
+                "interval_minutes": model_interval_minutes,
+                "units": str(excess_depth_units).upper(),
+                "data_type": "PER-CUM",
+            },
+            "metrics": audit["metrics"],
+        }
+        manifest["manifest_sha256"] = _canonical_sha256(manifest)
+        content = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+        temporary = manifest_path.with_suffix(manifest_path.suffix + ".tmp")
+        temporary.write_text(content, encoding="utf-8")
+        temporary.replace(manifest_path)
+        return manifest
+
+    @staticmethod
+    def _write_grid_subprocess(
+        output: Path,
+        pathname: str,
+        frames: np.ndarray,
+        boundaries: list[datetime],
+        grid_info: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Write grid data in a child so native DSS locks end before hashing."""
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix=f".{output.stem}-writer-",
+            dir=output.parent,
+        ) as stage_name:
+            stage = Path(stage_name)
+            data_path = stage / "frames.npy"
+            request_path = stage / "request.json"
+            result_path = stage / "result.json"
+            np.save(data_path, np.asarray(frames, dtype=np.float32), allow_pickle=False)
+            request = {
+                "schema": "hms-commander/grid-writer-request/1.0",
+                "data": {
+                    "path": str(data_path),
+                    "sha256": _sha256_file(data_path),
+                },
+                "output_dss": str(output),
+                "pathname": pathname,
+                "times": [value.isoformat(timespec="seconds") for value in boundaries],
+                "grid_info": dict(grid_info),
+            }
+            request_path.write_text(
+                json.dumps(request, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "hms_commander.HmsGridWriterWorker",
+                    "--request",
+                    str(request_path),
+                    "--result",
+                    str(result_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+            if not result_path.is_file():
+                raise RuntimeError(
+                    "Grid writer produced no result; "
+                    f"exit={completed.returncode}, stderr={completed.stderr[-2000:]}"
+                )
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            if completed.returncode != 0 or result.get("status") != "succeeded":
+                error = result.get("error", {})
+                raise RuntimeError(
+                    "Grid writer failed: "
+                    f"{error.get('type', 'unknown')}: {error.get('message', '')}"
+                )
+            return result
+
+    @staticmethod
+    def _pathname_parts(pathname: str) -> list[str]:
+        if (
+            not isinstance(pathname, str)
+            or not pathname.startswith("/")
+            or not pathname.endswith("/")
+        ):
+            raise ValueError(f"Invalid six-part DSS pathname: {pathname!r}")
+        parts = pathname[1:-1].split("/")
+        if len(parts) != 6:
+            raise ValueError(f"Invalid six-part DSS pathname: {pathname!r}")
+        return parts
+
+    @staticmethod
+    def _validate_family_selector(pathname: str) -> None:
+        parts = HmsSpatialTransfer._pathname_parts(pathname)
+        if parts[3] or parts[4] or not all(parts[index] for index in (0, 1, 2, 5)):
+            raise ValueError(
+                "Grid pathname selector requires A/B/C/F and blank D/E parts"
+            )
+
+    @staticmethod
+    def _grid_time(value: str) -> datetime:
+        try:
+            date_part, clock_part = value.split(":", maxsplit=1)
+            if clock_part == "2400":
+                return datetime.strptime(date_part, "%d%b%Y") + timedelta(days=1)
+            return datetime.strptime(value, "%d%b%Y:%H%M")
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Unsupported DSS grid time part: {value!r}") from exc
 
     @staticmethod
     @log_call

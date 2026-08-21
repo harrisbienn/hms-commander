@@ -68,6 +68,40 @@
         }
       }
     },
+    "spatial_transfer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "basin_sqlite",
+        "basin_sqlite_sha256",
+        "source_grid_definition",
+        "source_grid_definition_sha256",
+        "target_grid_definition",
+        "target_grid_definition_sha256",
+        "output_pathname",
+        "source_interval_minutes",
+        "source_value_multiplier",
+        "fingerprint_tolerance",
+        "excess_depth_units",
+        "status",
+        "forecast_eligible"
+      ],
+      "properties": {
+        "basin_sqlite": {"type": "string", "minLength": 1},
+        "basin_sqlite_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "source_grid_definition": {"type": "string", "minLength": 1},
+        "source_grid_definition_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "target_grid_definition": {"type": "string", "minLength": 1},
+        "target_grid_definition_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "output_pathname": {"type": "string", "minLength": 1},
+        "source_interval_minutes": {"type": "integer", "minimum": 1},
+        "source_value_multiplier": {"type": "number", "exclusiveMinimum": 0},
+        "fingerprint_tolerance": {"type": "number", "minimum": 0},
+        "excess_depth_units": {"enum": ["IN", "MM"]},
+        "status": {"const": "qualification_only"},
+        "forecast_eligible": {"const": false}
+      }
+    },
     "model_window": {
       "type": "object",
       "additionalProperties": false,
