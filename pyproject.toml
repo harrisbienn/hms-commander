@@ -93,6 +93,7 @@ Issues = "https://github.com/gpt-cmdr/hms-commander/issues"
 
 [project.scripts]
 hms-scenario-worker = "hms_commander.HmsScenarioWorker:main"
+hms-timeseries-worker = "hms_commander.HmsTimeSeriesWorker:main"
 
 [tool.setuptools]
 packages = ["hms_commander", "hms_commander.data", "hms_commander.dss"]

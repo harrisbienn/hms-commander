@@ -21,7 +21,7 @@ Lazy Loading:
 import sys
 import os
 from pathlib import Path
-from typing import List, Dict, Optional, Union, Any
+from typing import List, Dict, Optional, Union, Any, Sequence
 import logging
 import re
 
@@ -395,6 +395,151 @@ class DssCore:
 
         finally:
             dss.done()
+
+    @staticmethod
+    def write_timeseries(
+        dss_file: Union[str, Path],
+        pathname: str,
+        times: Sequence[Any],
+        values: Sequence[float],
+        *,
+        units: str,
+        data_type: str,
+        interval_minutes: Optional[int] = None,
+        create_if_missing: bool = True,
+    ) -> None:
+        """Write one regular time series through the standalone DSS bridge.
+
+        Args:
+            dss_file: DSS destination, created when permitted.
+            pathname: Six-part DSS pathname for the record.
+            times: Timezone-naive, minute-aligned timestamps.
+            values: Numeric ordinates corresponding one-to-one with ``times``.
+            units: DSS units metadata.
+            data_type: DSS record type, such as ``INST-VAL``.
+            interval_minutes: Expected regular interval. When omitted it is
+                inferred from the timestamps.
+            create_if_missing: Whether the destination may be created.
+
+        Raises:
+            FileNotFoundError: If creation is disabled and the file is absent.
+            ValueError: If the pathname, timestamps, values, or metadata are
+                invalid for a regular DSS record.
+            RuntimeError: If the Java DSS write fails.
+
+        Notes:
+            DSS regular time-series timestamps have minute precision. This
+            method therefore rejects timezone-aware or sub-minute timestamps
+            instead of silently changing them.
+        """
+        parts = (
+            pathname[1:-1].split("/")
+            if pathname.startswith("/") and pathname.endswith("/")
+            else []
+        )
+        if len(parts) != 6:
+            raise ValueError("pathname must contain six DSS parts")
+        if not isinstance(units, str) or not units.strip():
+            raise ValueError("units must be a non-empty string")
+        if not isinstance(data_type, str) or not data_type.strip():
+            raise ValueError("data_type must be a non-empty string")
+
+        timestamps = pd.DatetimeIndex(times)
+        ordinates = np.asarray(values, dtype=np.float64)
+        if ordinates.ndim != 1:
+            raise ValueError("values must be a one-dimensional sequence")
+        if len(timestamps) != len(ordinates):
+            raise ValueError(
+                f"times ({len(timestamps)}) and values ({len(ordinates)}) "
+                "must have the same length"
+            )
+        if not len(timestamps):
+            raise ValueError("times and values must not be empty")
+        if timestamps.hasnans:
+            raise ValueError("DSS timestamps must not contain NaT")
+        if timestamps.tz is not None:
+            raise ValueError("DSS timestamps must be timezone-naive local times")
+        if timestamps.has_duplicates or not timestamps.is_monotonic_increasing:
+            raise ValueError("DSS timestamps must be unique and increasing")
+        if not np.isfinite(ordinates).all():
+            raise ValueError("DSS values must be finite")
+        if any(
+            timestamp.second or timestamp.microsecond or timestamp.nanosecond
+            for timestamp in timestamps
+        ):
+            raise ValueError("DSS timestamps must be aligned to whole minutes")
+
+        epoch = pd.Timestamp("1899-12-31T00:00:00")
+        hec_times = ((timestamps - epoch) // pd.Timedelta(minutes=1)).to_numpy(
+            dtype=np.int64
+        )
+        if len(hec_times) > 1:
+            intervals = np.diff(hec_times)
+            detected_interval = int(intervals[0])
+            if detected_interval <= 0 or not np.all(
+                intervals == detected_interval
+            ):
+                raise ValueError("DSS timestamps must have one regular interval")
+        elif interval_minutes is None:
+            raise ValueError("interval_minutes is required for a single value")
+        else:
+            detected_interval = int(interval_minutes)
+
+        if interval_minutes is not None:
+            if (
+                isinstance(interval_minutes, bool)
+                or not isinstance(interval_minutes, (int, np.integer))
+                or int(interval_minutes) <= 0
+            ):
+                raise ValueError("interval_minutes must be a positive integer")
+            if int(interval_minutes) != detected_interval:
+                raise ValueError(
+                    "DSS timestamp interval does not match interval_minutes"
+                )
+        interval = detected_interval
+
+        output = Path(dss_file).resolve()
+        if output.exists() and not output.is_file():
+            raise ValueError(f"DSS destination is not a file: {output}")
+        if not output.exists():
+            if not create_if_missing:
+                raise FileNotFoundError(f"DSS file not found: {output}")
+            output.parent.mkdir(parents=True, exist_ok=True)
+
+        DssCore._configure_jvm()
+
+        from jnius import autoclass, cast
+
+        HecDss = autoclass("hec.heclib.dss.HecDss")
+        TimeSeriesContainer = autoclass("hec.io.TimeSeriesContainer")
+        HecTimeArray = autoclass("hec.heclib.util.HecTimeArray")
+
+        container = TimeSeriesContainer()
+        container.fullName = pathname
+        container.units = units
+        container.type = data_type
+        container.interval = interval
+        container.setStoreAsDoubles(True)
+        time_status = container.setTimes(HecTimeArray(hec_times.tolist()))
+        value_status = container.setValues(ordinates.tolist())
+        if time_status != 0 or value_status != 0:
+            raise RuntimeError(
+                "HEC time-series container rejected input arrays: "
+                f"times={time_status}, values={value_status}"
+            )
+        container.numberValues = len(ordinates)
+
+        dss = None
+        try:
+            dss = HecDss.open(str(output))
+            dss.put(cast("hec.io.DataContainer", container))
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to write time series {pathname} to {output}: {exc}"
+            ) from exc
+        finally:
+            if dss is not None:
+                dss.done()
 
     @staticmethod
     def _hec_time_to_datetime(hec_time_minutes: int) -> 'pd.Timestamp':

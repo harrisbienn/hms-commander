@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "hms-commander/timeseries-window-request/1.0",
+  "title": "HMS Commander time-series window request 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "operation_id",
+    "qualification",
+    "source_window",
+    "target_window",
+    "output_dss",
+    "sentinel_threshold",
+    "series"
+  ],
+  "properties": {
+    "schema": {"const": "hms-commander/timeseries-window-request/1.0"},
+    "operation_id": {"type": "string", "minLength": 1},
+    "qualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "forecast_eligible", "basis_issue"],
+      "properties": {
+        "status": {"const": "qualification_only"},
+        "forecast_eligible": {"const": false},
+        "basis_issue": {"type": "string", "minLength": 1}
+      }
+    },
+    "source_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "time_zone"],
+      "properties": {
+        "start": {"$ref": "#/$defs/modelTime"},
+        "time_zone": {"type": "string", "minLength": 1}
+      }
+    },
+    "target_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end", "time_zone"],
+      "properties": {
+        "start": {"$ref": "#/$defs/modelTime"},
+        "end": {"$ref": "#/$defs/modelTime"},
+        "time_zone": {"type": "string", "minLength": 1}
+      }
+    },
+    "output_dss": {"type": "string", "minLength": 1},
+    "sentinel_threshold": {"type": "number", "exclusiveMaximum": 0},
+    "series": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "series_id",
+          "source_dss",
+          "source_sha256",
+          "source_pathname",
+          "output_pathname",
+          "interval_minutes",
+          "units",
+          "data_type"
+        ],
+        "properties": {
+          "series_id": {"type": "string", "minLength": 1},
+          "source_dss": {"type": "string", "minLength": 1},
+          "source_sha256": {"$ref": "#/$defs/sha256"},
+          "source_pathname": {"type": "string", "minLength": 7},
+          "output_pathname": {"type": "string", "minLength": 7},
+          "interval_minutes": {"type": "integer", "minimum": 1},
+          "units": {"type": "string", "minLength": 1},
+          "data_type": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "modelTime": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}
