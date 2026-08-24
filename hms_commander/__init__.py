@@ -87,6 +87,7 @@ from .HmsJython import HmsJython
 from .HmsCmdr import HmsCmdr
 from .HmsScenario import HmsScenario, HmsScenarioWorkspace, HmsRunArtifact
 from .HmsScenarioWorker import HmsScenarioWorker, HmsScenarioWorkerError
+from .HmsTimeSeriesWorker import HmsTimeSeriesWorker, HmsTimeSeriesWorkerError
 
 # DSS and Results (Phase 4)
 from .dss import HmsDss, HmsDssGrid, DssCore
@@ -153,6 +154,8 @@ __all__ = [
     "HmsRunArtifact",
     "HmsScenarioWorker",
     "HmsScenarioWorkerError",
+    "HmsTimeSeriesWorker",
+    "HmsTimeSeriesWorkerError",
 
     # DSS and Results
     "DssCore",
@@ -217,4 +220,3 @@ __all__ = [
 
 # Output Parsing
 from .HmsOutput import HmsOutput, HmsMessage, ComputeResult
-
