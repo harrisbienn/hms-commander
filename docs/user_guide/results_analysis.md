@@ -112,6 +112,59 @@ manifest = HmsResultsProducts.export(
 )
 ```
 
+### Materialize the RAS handoff DSS
+
+Use `materialize_handoff` when the RAS plan needs one DSS assembled from HMS
+results and approved provider inputs. Each mapping pins its source file by
+SHA-256, declares the exact source and output pathnames, and supplies the units,
+data type, interval, and permitted identity or linear transformation. The
+method validates the full model window, writes each distinct output pathname
+once, and then applies the same mechanical qualification as `export`. DSS
+materialization runs in an isolated child process so native handles are closed
+before the parent authenticates the consolidated file.
+
+```python
+handoff = HmsResultsProducts.materialize_handoff(
+    [
+        {
+            "mapping_id": "split-left",
+            "source_asset_id": "hms-scenario-output",
+            "source_dss": "run/scenario-output.dss",
+            "source_sha256": "<64-character lowercase SHA-256>",
+            "source_pathname": "//OUTLET/FLOW//5Minute/RUN:SCENARIO-001/",
+            "output_pathname": "//UPSTREAM/FLOW//5Minute/HANDOFF:LEFT/",
+            "source_units": "CFS",
+            "target_units": "CFS",
+            "value_type": "INST-VAL",
+            "interval_minutes": 5,
+            "conversion": "linear",
+            "multiplier": 0.5,
+            "offset": 0.0,
+        }
+    ],
+    "products/scenario-001/hydrologic-handoff",
+    model_start="2019-09-18T13:00:00",
+    model_end="2019-09-19T13:00:00",
+)
+```
+
+The destination directory must not already exist. Publication is atomic: an
+invalid checksum, duplicate output with a different transformation, metadata
+mismatch, incomplete time window, or failed qualification leaves no package at
+the requested destination. Successful output contains:
+
+- `hydrologic-handoff.dss`, the consolidated RAS input;
+- `hydrologic-handoff-provenance.json`, a portable record of source hashes and
+  transformations; and
+- `products/hydrologic-products.json`, whose source hash authenticates the
+  consolidated DSS for downstream consumption.
+
+The returned `boundary_pathnames` index maps each stable mapping ID to its
+materialized pathname. Multiple mapping IDs may intentionally share an output
+only when their source and transformation definitions are identical. This
+allows several RAS boundary selectors to consume one DSS record without writing
+or transforming it more than once.
+
 ## Audit gridded excess transfer
 
 Use `HmsSpatialTransfer` when gridded HMS incremental excess must be sampled
@@ -241,6 +294,8 @@ else:
 - **Export** - `export_results_to_csv()` - CSV output
 - **Scenario handoff** - `HmsResultsProducts.export()` - Deterministic,
   qualified HMS-to-RAS products
+- **Consolidated RAS input** - `HmsResultsProducts.materialize_handoff()` -
+  Authenticated multi-source DSS materialization
 
 ## Related Topics
 
