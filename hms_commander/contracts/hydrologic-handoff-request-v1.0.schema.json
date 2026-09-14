@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "hms-commander/hydrologic-handoff-request/1.0",
+  "title": "HMS Commander hydrologic handoff request 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "operation_id",
+    "model_window",
+    "output_directory",
+    "qualification",
+    "mappings"
+  ],
+  "properties": {
+    "schema": {"const": "hms-commander/hydrologic-handoff-request/1.0"},
+    "operation_id": {"type": "string", "minLength": 1},
+    "model_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start": {"type": "string", "minLength": 1},
+        "end": {"type": "string", "minLength": 1}
+      }
+    },
+    "output_directory": {"type": "string", "minLength": 1},
+    "qualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sentinel_threshold",
+        "maximum_final_to_peak_ratio",
+        "minimum_post_peak_hours"
+      ],
+      "properties": {
+        "sentinel_threshold": {"type": "number", "exclusiveMaximum": 0},
+        "maximum_final_to_peak_ratio": {"type": "number", "minimum": 0},
+        "minimum_post_peak_hours": {"type": "number", "minimum": 0}
+      }
+    },
+    "mappings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/mapping"}
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "pathname": {
+      "type": "string",
+      "pattern": "^/[^/]*/[^/]*/[^/]*/[^/]*/[^/]*/[^/]*/$"
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mapping_id",
+        "source_asset_id",
+        "source_dss",
+        "source_sha256",
+        "source_pathname",
+        "output_pathname",
+        "source_units",
+        "target_units",
+        "value_type",
+        "interval_minutes",
+        "conversion",
+        "multiplier",
+        "offset"
+      ],
+      "properties": {
+        "mapping_id": {"type": "string", "minLength": 1},
+        "source_asset_id": {"type": "string", "minLength": 1},
+        "source_dss": {"type": "string", "minLength": 1},
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "source_pathname": {"$ref": "#/$defs/pathname"},
+        "output_pathname": {"$ref": "#/$defs/pathname"},
+        "source_units": {"type": "string", "minLength": 1},
+        "target_units": {"type": "string", "minLength": 1},
+        "value_type": {"type": "string", "minLength": 1},
+        "interval_minutes": {"type": "integer", "minimum": 1},
+        "conversion": {"enum": ["identity", "linear"]},
+        "multiplier": {"type": "number", "not": {"const": 0}},
+        "offset": {"type": "number"}
+      }
+    }
+  }
+}
