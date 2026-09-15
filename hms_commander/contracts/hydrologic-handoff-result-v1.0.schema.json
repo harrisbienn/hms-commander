@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "hms-commander/hydrologic-handoff-result/1.0",
+  "title": "HMS Commander hydrologic handoff result 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "status",
+    "operation_id",
+    "request_sha256",
+    "created_at"
+  ],
+  "properties": {
+    "schema": {"const": "hms-commander/hydrologic-handoff-result/1.0"},
+    "status": {"enum": ["succeeded", "failed"]},
+    "operation_id": {"type": ["string", "null"]},
+    "request_sha256": {
+      "anyOf": [
+        {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        {"type": "null"}
+      ]
+    },
+    "reuse_disposition": {"type": "string"},
+    "model_window": {"type": "object"},
+    "directory": {"type": "string"},
+    "assets": {"type": "object"},
+    "boundary_pathnames": {"type": "object"},
+    "qualification": {"type": "object"},
+    "classification": {"type": "string"},
+    "error": {"type": "object"},
+    "created_at": {"type": "string", "minLength": 1}
+  }
+}

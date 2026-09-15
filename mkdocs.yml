@@ -117,6 +117,7 @@ nav:
       - Execution: user_guide/execution.md
       - Scenario Worker: user_guide/scenario_worker.md
       - Time-Series Window Worker: user_guide/timeseries_window_worker.md
+      - Hydrologic Handoff Worker: user_guide/hydrologic_handoff_worker.md
       - Geospatial Operations: user_guide/geospatial.md
       - DSS Operations: user_guide/dss_operations.md
       - Results Analysis: user_guide/results_analysis.md
@@ -148,6 +149,7 @@ nav:
           - HmsOutput: api/hms_output.md
           - HmsScenarioWorker: api/hms_scenario_worker.md
           - HmsTimeSeriesWorker: api/hms_timeseries_worker.md
+          - HmsHandoffWorker: api/hms_handoff_worker.md
       - Data & Results:
           - DssCore: api/dss_core.md
           - HmsDss: api/hms_dss.md
