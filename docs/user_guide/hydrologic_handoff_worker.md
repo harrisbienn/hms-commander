@@ -17,8 +17,8 @@ The worker:
 - authenticates each source DSS and detects changes during materialization;
 - requires exact inclusive model-window coverage and regular intervals;
 - rejects ambiguous output-path collisions and invalid transformations;
-- writes the DSS in an isolated child process so native handles close before
-  authentication;
+- writes and qualifies the DSS in separate isolated child processes so native
+  handles close before authentication and atomic publication;
 - publishes a consolidated DSS, portable provenance, and qualified product
   manifest atomically; and
 - permits reuse only when the request, all sources, and all published assets

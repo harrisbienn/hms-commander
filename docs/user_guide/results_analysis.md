@@ -120,8 +120,9 @@ SHA-256, declares the exact source and output pathnames, and supplies the units,
 data type, interval, and permitted identity or linear transformation. The
 method validates the full model window, writes each distinct output pathname
 once, and then applies the same mechanical qualification as `export`. DSS
-materialization runs in an isolated child process so native handles are closed
-before the parent authenticates the consolidated file.
+materialization and qualification run in separate isolated child processes so
+native handles are closed before the parent authenticates and atomically
+publishes the consolidated file.
 
 ```python
 handoff = HmsResultsProducts.materialize_handoff(

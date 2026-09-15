@@ -3,7 +3,9 @@
 import hashlib
 import importlib
 import json
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -124,6 +126,30 @@ def _install_handoff_dss_fakes(monkeypatch, source_frames):
         HmsResultsProducts,
         "_write_handoff_subprocess",
         staticmethod(write_in_process),
+    )
+
+    def export_in_process(
+        source,
+        required_pathnames,
+        output,
+        *,
+        sentinel_threshold,
+        maximum_final_to_peak_ratio,
+        minimum_post_peak_hours,
+    ):
+        HmsResultsProducts.export(
+            source,
+            required_pathnames,
+            output,
+            sentinel_threshold=sentinel_threshold,
+            maximum_final_to_peak_ratio=maximum_final_to_peak_ratio,
+            minimum_post_peak_hours=minimum_post_peak_hours,
+        )
+
+    monkeypatch.setattr(
+        HmsResultsProducts,
+        "_export_handoff_subprocess",
+        staticmethod(export_in_process),
     )
     return written
 
@@ -392,6 +418,61 @@ def test_handoff_writer_serializes_child_request_and_removes_it(
     assert observed["mappings"][0]["source_dss"] == str(source.resolve())
     assert observed["output"] == str(output)
     assert not output.with_suffix(".child-request.json").exists()
+
+
+@pytest.mark.requires_java
+@pytest.mark.skipif(
+    os.environ.get("HMS_COMMANDER_RUN_DSS_INTEGRATION") != "1",
+    reason="set HMS_COMMANDER_RUN_DSS_INTEGRATION=1 for DSS handoff coverage",
+)
+def test_materialize_handoff_releases_dss_before_atomic_publication(tmp_path):
+    source = tmp_path / "source.dss"
+    writer = """
+import sys
+from pathlib import Path
+
+import pandas as pd
+
+from hms_commander import DssCore
+
+DssCore.write_timeseries(
+    Path(sys.argv[1]),
+    sys.argv[2],
+    pd.date_range("2019-09-18T13:00:00", periods=3, freq="5min"),
+    [10.0, 20.0, 15.0],
+    units="CFS",
+    data_type="INST-VAL",
+    interval_minutes=5,
+)
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", writer, str(source), FLOW_PATH],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+
+    package = tmp_path / "handoff-package"
+    result = HmsResultsProducts.materialize_handoff(
+        [
+            _handoff_mapping(
+                source,
+                mapping_id="outlet",
+                source_pathname=FLOW_PATH,
+                output_pathname=LEFT_PATH,
+            )
+        ],
+        package,
+        model_start="2019-09-18T13:00:00",
+        model_end="2019-09-18T13:10:00",
+    )
+
+    assert package.is_dir()
+    assert Path(result["dss"]["path"]).is_file()
+    assert result["status"]["all_required_pathnames_valid"] is True
+    assert not list(tmp_path.glob(".handoff-package-*"))
 
 
 @pytest.mark.parametrize(

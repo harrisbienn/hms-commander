@@ -289,8 +289,6 @@ class HmsResultsProducts:
             HmsResultsProducts._verify_handoff_sources_unchanged(source_identities)
             if not handoff_dss.is_file() or handoff_dss.stat().st_size <= 0:
                 raise RuntimeError("DSS child did not create a non-empty handoff")
-            # Capture the output identity before export starts the local JVM.
-            # Some HEC-DSS handles remain locked until this process exits.
             handoff_identity = HmsResultsProducts._identity(handoff_dss)
             required_pathnames = [
                 {
@@ -300,7 +298,7 @@ class HmsResultsProducts:
                 for mapping in normalized
             ]
             products = stage / "products"
-            manifest = HmsResultsProducts.export(
+            HmsResultsProducts._export_handoff_subprocess(
                 handoff_dss,
                 required_pathnames,
                 products,
@@ -308,7 +306,28 @@ class HmsResultsProducts:
                 maximum_final_to_peak_ratio=maximum_final_to_peak_ratio,
                 minimum_post_peak_hours=minimum_post_peak_hours,
             )
-            if not manifest["status"]["all_required_pathnames_valid"]:
+            qualified_identity = HmsResultsProducts._identity(handoff_dss)
+            if qualified_identity != handoff_identity:
+                raise RuntimeError(
+                    "Materialized hydrologic handoff changed during qualification"
+                )
+            manifest_path = products / HmsResultsProducts.MANIFEST_FILENAME
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise RuntimeError(
+                    "DSS qualification child did not create a valid product manifest"
+                ) from exc
+            if (
+                not isinstance(manifest, dict)
+                or manifest.get("schema") != HmsResultsProducts.SCHEMA
+                or manifest.get("source", {}).get("sha256")
+                != handoff_identity["sha256"]
+            ):
+                raise RuntimeError(
+                    "DSS qualification child created an inconsistent product manifest"
+                )
+            if not manifest.get("status", {}).get("all_required_pathnames_valid"):
                 raise RuntimeError(
                     "Materialized hydrologic handoff failed mechanical "
                     "pathname qualification"
@@ -348,7 +367,6 @@ class HmsResultsProducts:
                     },
                 )
             )
-            manifest_path = products / HmsResultsProducts.MANIFEST_FILENAME
             _write_json(manifest_path, manifest)
             stage.replace(output)
 
@@ -693,6 +711,64 @@ class HmsResultsProducts:
                     detail = detail[-2000:]
                 raise RuntimeError(
                     "DSS handoff child failed with exit code "
+                    f"{completed.returncode}: {detail}"
+                )
+        finally:
+            request_path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _export_handoff_subprocess(
+        source: Path,
+        required_pathnames: list[Dict[str, Any]],
+        output: Path,
+        *,
+        sentinel_threshold: float,
+        maximum_final_to_peak_ratio: float,
+        minimum_post_peak_hours: float,
+    ) -> None:
+        """Qualify the DSS in a child so native handles close before publish."""
+        request_path = source.with_suffix(".export-request.json")
+        payload = {
+            "source": str(source),
+            "required_pathnames": required_pathnames,
+            "output": str(output),
+            "qualification": {
+                "sentinel_threshold": sentinel_threshold,
+                "maximum_final_to_peak_ratio": maximum_final_to_peak_ratio,
+                "minimum_post_peak_hours": minimum_post_peak_hours,
+            },
+        }
+        try:
+            _write_json(request_path, payload)
+            command = [
+                sys.executable,
+                "-c",
+                (
+                    "from hms_commander.HmsResultsProducts import "
+                    "_handoff_export_child_main; "
+                    "raise SystemExit(_handoff_export_child_main())"
+                ),
+                "--request",
+                str(request_path),
+            ]
+            try:
+                completed = subprocess.run(
+                    command,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise RuntimeError(
+                    "DSS qualification child exceeded 300 seconds"
+                ) from exc
+            if completed.returncode != 0:
+                detail = (completed.stderr or completed.stdout).strip()
+                if len(detail) > 2000:
+                    detail = detail[-2000:]
+                raise RuntimeError(
+                    "DSS qualification child failed with exit code "
                     f"{completed.returncode}: {detail}"
                 )
         finally:
@@ -1122,4 +1198,26 @@ def _handoff_child_main(argv: Optional[list[str]] = None) -> int:
         start=HmsResultsProducts._model_time(payload["model_start"], "model_start"),
         end=HmsResultsProducts._model_time(payload["model_end"], "model_end"),
     )
+    return 0
+
+
+def _handoff_export_child_main(argv: Optional[list[str]] = None) -> int:
+    """Run isolated DSS qualification used by ``materialize_handoff``."""
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--request", required=True)
+    arguments = parser.parse_args(argv)
+    payload = json.loads(Path(arguments.request).read_text(encoding="utf-8"))
+    qualification = payload["qualification"]
+    manifest = HmsResultsProducts.export(
+        Path(payload["source"]),
+        payload["required_pathnames"],
+        Path(payload["output"]),
+        sentinel_threshold=qualification["sentinel_threshold"],
+        maximum_final_to_peak_ratio=qualification["maximum_final_to_peak_ratio"],
+        minimum_post_peak_hours=qualification["minimum_post_peak_hours"],
+    )
+    if not manifest["status"]["all_required_pathnames_valid"]:
+        raise RuntimeError(
+            "Materialized hydrologic handoff failed mechanical pathname qualification"
+        )
     return 0
