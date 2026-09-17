@@ -6,10 +6,16 @@ import hashlib
 import json
 import math
 import re
+import subprocess
+import sys
 import tempfile
 from collections.abc import Iterable, Mapping
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+import numpy as np
+import pandas as pd
 
 from .Decorators import log_call
 
@@ -36,6 +42,7 @@ _AREA_UNIT_ALIASES = {
     "SQUARE_MILE": "SQUARE_MILES",
     "SQUARE_MILES": "SQUARE_MILES",
 }
+_DEPTH_UNIT_METERS = {"IN": 0.0254, "MM": 0.001}
 
 
 def _canonical_sha256(payload: Mapping[str, Any]) -> str:
@@ -46,6 +53,23 @@ def _canonical_sha256(payload: Mapping[str, Any]) -> str:
         allow_nan=False,
     ).encode("utf-8")
     return hashlib.sha256(content).hexdigest()
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _array_sha256(values: np.ndarray) -> str:
+    contiguous = np.ascontiguousarray(values)
+    digest = hashlib.sha256()
+    digest.update(str(contiguous.dtype).encode("ascii"))
+    digest.update(json.dumps(list(contiguous.shape)).encode("ascii"))
+    digest.update(contiguous.tobytes(order="C"))
+    return digest.hexdigest()
 
 
 def _required_mapping(
@@ -271,12 +295,161 @@ def _validated_application_area(value: Any) -> dict[str, Any]:
     return normalized
 
 
+def _normalized_volume_tolerance(value: Any) -> dict[str, float]:
+    _required_mapping(
+        value,
+        {"absolute_cubic_meters", "relative_fraction"},
+        label="volume_tolerance",
+    )
+    try:
+        absolute = float(value["absolute_cubic_meters"])
+        relative = float(value["relative_fraction"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError("volume_tolerance values must be numeric") from exc
+    if (
+        not math.isfinite(absolute)
+        or absolute < 0
+        or not math.isfinite(relative)
+        or relative < 0
+    ):
+        raise ValueError("volume_tolerance values must be finite and nonnegative")
+    return {
+        "absolute_cubic_meters": absolute,
+        "relative_fraction": relative,
+    }
+
+
+def _residual_record(
+    source: float,
+    target: float,
+    tolerance: Mapping[str, float],
+    *,
+    label: str,
+) -> dict[str, Any]:
+    if not math.isfinite(source) or not math.isfinite(target):
+        raise ValueError(f"Volume evidence is non-finite for {label}")
+    if source < 0 or target < 0:
+        raise ValueError(f"Volume evidence is negative for {label}")
+    residual = target - source
+    absolute_residual = abs(residual)
+    limit = max(
+        tolerance["absolute_cubic_meters"],
+        abs(source) * tolerance["relative_fraction"],
+    )
+    if absolute_residual > limit:
+        raise ValueError(
+            f"Volume residual exceeds tolerance for {label}: "
+            f"{absolute_residual} > {limit} cubic meters"
+        )
+    relative = (
+        None
+        if source == 0 and absolute_residual
+        else (0.0 if source == 0 else absolute_residual / abs(source))
+    )
+    return {
+        "source_cubic_meters": float(source),
+        "target_cubic_meters": float(target),
+        "residual_cubic_meters": float(residual),
+        "absolute_residual_cubic_meters": float(absolute_residual),
+        "relative_residual_fraction": relative,
+        "allowed_residual_cubic_meters": float(limit),
+    }
+
+
+def _volume_evidence(
+    source_by_subbasin: Mapping[str, np.ndarray],
+    target_by_subbasin: Mapping[str, np.ndarray],
+    interval_ends: pd.DatetimeIndex,
+    tolerance: Mapping[str, float],
+) -> dict[str, Any]:
+    if set(source_by_subbasin) != set(target_by_subbasin):
+        raise ValueError("Volume evidence subbasin identities do not match")
+    names = sorted(source_by_subbasin)
+    step_count = len(interval_ends)
+    for name in names:
+        source = np.asarray(source_by_subbasin[name], dtype=np.float64)
+        target = np.asarray(target_by_subbasin[name], dtype=np.float64)
+        if source.shape != (step_count,) or target.shape != (step_count,):
+            raise ValueError("Volume evidence series lengths do not match the window")
+        if (
+            not np.isfinite(source).all()
+            or not np.isfinite(target).all()
+            or (source < 0).any()
+            or (target < 0).any()
+        ):
+            raise ValueError("Volume evidence must be finite and nonnegative")
+
+    per_subbasin = []
+    for name in names:
+        source = np.asarray(source_by_subbasin[name], dtype=np.float64)
+        target = np.asarray(target_by_subbasin[name], dtype=np.float64)
+        step_residuals = [
+            _residual_record(
+                float(source[index]),
+                float(target[index]),
+                tolerance,
+                label=f"subbasin {name!r} step {index}",
+            )
+            for index in range(step_count)
+        ]
+        aggregate = _residual_record(
+            float(np.sum(source, dtype=np.float64)),
+            float(np.sum(target, dtype=np.float64)),
+            tolerance,
+            label=f"subbasin {name!r} aggregate",
+        )
+        aggregate["maximum_step_absolute_residual_cubic_meters"] = max(
+            item["absolute_residual_cubic_meters"] for item in step_residuals
+        )
+        per_subbasin.append({"subbasin": name, **aggregate})
+
+    source_total = np.sum(
+        np.stack([source_by_subbasin[name] for name in names]),
+        axis=0,
+        dtype=np.float64,
+    )
+    target_total = np.sum(
+        np.stack([target_by_subbasin[name] for name in names]),
+        axis=0,
+        dtype=np.float64,
+    )
+    per_step = []
+    for index, interval_end in enumerate(interval_ends):
+        per_step.append(
+            {
+                "interval_end": interval_end.isoformat(),
+                **_residual_record(
+                    float(source_total[index]),
+                    float(target_total[index]),
+                    tolerance,
+                    label=f"aggregate step {index}",
+                ),
+            }
+        )
+    aggregate = _residual_record(
+        float(np.sum(source_total, dtype=np.float64)),
+        float(np.sum(target_total, dtype=np.float64)),
+        tolerance,
+        label="aggregate run",
+    )
+    aggregate["maximum_step_absolute_residual_cubic_meters"] = max(
+        item["absolute_residual_cubic_meters"] for item in per_step
+    )
+    return {
+        "per_step": per_step,
+        "per_subbasin": per_subbasin,
+        "aggregate": aggregate,
+    }
+
+
 class HmsSubbasinTransfer:
     """Compile the volume-conserving HMS-subbasin transfer-map contract."""
 
     SCHEMA = "hms-commander/subbasin-volume-transfer-map/1.0"
     METHOD = "hms-subbasin-volume-conserving-v1"
     ALGORITHM = "target-center-subbasin-coverage-effective-area-scaling-v1"
+    AUDIT_SCHEMA = "hms-commander/subbasin-volume-transfer-audit/1.0"
+    PRODUCT_SCHEMA = "hms-commander/subbasin-volume-excess-product/1.0"
     AREA_PRECISION_DECIMAL_PLACES = 9
 
     @staticmethod
@@ -781,6 +954,522 @@ class HmsSubbasinTransfer:
             raise ValueError("transfer_map_sha256 is missing or invalid")
         normalized["transfer_map_sha256"] = recorded_hash
         return normalized
+
+    @staticmethod
+    @log_call
+    def read_excess_series(
+        source_dss: str | Path,
+        transfer_map: Mapping[str, Any],
+        *,
+        source_a_part: str,
+        source_run_name: str,
+        model_start: datetime,
+        model_end: datetime,
+        interval_minutes: int,
+        source_depth_units: str,
+    ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+        """Read exact interval-end ``PRECIP-EXCESS`` series for a map.
+
+        The logical source series may span multiple dated DSS D-part records
+        and must contain exactly one interval-end value for each requested
+        model interval. Extra, missing, shifted, or duplicated timestamps are
+        rejected rather than trimmed or resampled.
+        """
+        from .dss import HmsDss
+
+        normalized_map = HmsSubbasinTransfer.validate_transfer_map(transfer_map)
+        source = Path(source_dss).resolve()
+        if not source.is_file():
+            raise FileNotFoundError(f"Source HMS DSS does not exist: {source}")
+        if (
+            model_start.tzinfo is not None
+            or model_end.tzinfo is not None
+            or model_end <= model_start
+            or model_start.second
+            or model_end.second
+            or model_start.microsecond
+            or model_end.microsecond
+        ):
+            raise ValueError("Model window must use increasing naive whole minutes")
+        if (
+            isinstance(interval_minutes, bool)
+            or not isinstance(interval_minutes, (int, np.integer))
+            or int(interval_minutes) <= 0
+        ):
+            raise ValueError("interval_minutes must be a positive integer")
+        interval_minutes = int(interval_minutes)
+        duration_minutes = int((model_end - model_start).total_seconds() // 60)
+        if duration_minutes % interval_minutes:
+            raise ValueError("Model window is not interval aligned")
+        source_units = str(source_depth_units).strip().upper()
+        if source_units not in _DEPTH_UNIT_METERS:
+            raise ValueError("source_depth_units must be IN or MM")
+        if not isinstance(source_a_part, str):
+            raise ValueError("source_a_part must be a string, including blank")
+        a_part = source_a_part.strip()
+        run_name = _non_empty(source_run_name, label="source_run_name")
+        expected_f_part = f"RUN:{run_name}"
+        interval_ends = pd.date_range(
+            start=model_start + timedelta(minutes=interval_minutes),
+            end=model_end,
+            freq=pd.Timedelta(minutes=interval_minutes),
+        )
+
+        before = source.stat()
+        source_sha256 = _sha256_file(source)
+        catalog = [str(pathname) for pathname in HmsDss.get_catalog(source)]
+        series_by_subbasin: dict[str, np.ndarray] = {}
+        series_evidence = []
+        for subbasin in normalized_map["subbasins"]:
+            name = subbasin["subbasin"]
+            matches = []
+            for pathname in catalog:
+                parts = HmsSubbasinTransfer._pathname_parts(pathname)
+                if (
+                    parts[0].casefold() == a_part.casefold()
+                    and parts[1].casefold() == name.casefold()
+                    and parts[2].casefold() == "precip-excess"
+                    and HmsSubbasinTransfer._interval_minutes_from_part(parts[4])
+                    == interval_minutes
+                    and parts[5].casefold() == expected_f_part.casefold()
+                ):
+                    matches.append(pathname)
+            if not matches:
+                raise ValueError(
+                    f"Expected one PRECIP-EXCESS pathname family for {name!r}; "
+                    "found none"
+                )
+            if len(matches) != len(set(matches)):
+                raise ValueError(
+                    f"PRECIP-EXCESS catalog entries for {name!r} are duplicated"
+                )
+            interval_parts = {
+                HmsSubbasinTransfer._pathname_parts(pathname)[4].casefold()
+                for pathname in matches
+            }
+            if len(interval_parts) != 1:
+                raise ValueError(
+                    f"PRECIP-EXCESS pathname family for {name!r} has competing "
+                    "interval encodings"
+                )
+            matches.sort(key=str.casefold)
+            pathname = matches[0]
+            frame = HmsDss.read_timeseries(source, pathname)
+            actual_times = pd.DatetimeIndex(frame.index)
+            if not actual_times.equals(interval_ends):
+                raise ValueError(
+                    f"PRECIP-EXCESS timestamps for {name!r} do not exactly "
+                    "match interval-end model coverage"
+                )
+            if str(frame.attrs.get("units", "")).strip().upper() != source_units:
+                raise ValueError(
+                    f"PRECIP-EXCESS units for {name!r} do not match "
+                    f"{source_units!r}"
+                )
+            if (
+                str(frame.attrs.get("type", "")).strip().upper().replace("_", "-")
+                != "PER-CUM"
+            ):
+                raise ValueError(f"PRECIP-EXCESS type for {name!r} is not PER-CUM")
+            try:
+                actual_interval = int(frame.attrs.get("interval", 0))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"PRECIP-EXCESS interval for {name!r} is invalid"
+                ) from exc
+            if actual_interval != interval_minutes:
+                raise ValueError(
+                    f"PRECIP-EXCESS interval for {name!r} does not match request"
+                )
+            values = np.asarray(frame["value"], dtype=np.float64)
+            if values.shape != (len(interval_ends),):
+                raise ValueError(f"PRECIP-EXCESS values for {name!r} are incomplete")
+            if not np.isfinite(values).all() or (values < 0).any():
+                raise ValueError(f"PRECIP-EXCESS values for {name!r} are invalid")
+            series_by_subbasin[name] = values
+            series_evidence.append(
+                {
+                    "subbasin": name,
+                    "pathname_family": {
+                        "a_part": a_part,
+                        "b_part": name,
+                        "c_part": "PRECIP-EXCESS",
+                        "e_part": HmsSubbasinTransfer._pathname_parts(pathname)[4],
+                        "f_part": HmsSubbasinTransfer._pathname_parts(pathname)[5],
+                    },
+                    "catalog_pathnames": matches,
+                    "read_pathname": pathname,
+                    "value_sha256": _array_sha256(values),
+                    "value_count": len(values),
+                }
+            )
+
+        after = source.stat()
+        if (
+            after.st_size != before.st_size
+            or after.st_mtime_ns != before.st_mtime_ns
+            or after.st_ino != before.st_ino
+        ):
+            raise RuntimeError("Source HMS DSS changed while excess series were read")
+        return series_by_subbasin, {
+            "source_dss": {
+                "name": source.name,
+                "size_bytes": before.st_size,
+                "sha256": source_sha256,
+                "integrity_verification": {
+                    "pre_read": ["sha256", "size", "mtime_ns", "file_id"],
+                    "post_read": ["size", "mtime_ns", "file_id"],
+                    "status": "unchanged",
+                },
+            },
+            "a_part": a_part,
+            "run_name": run_name,
+            "parameter": "PRECIP-EXCESS",
+            "units": source_units,
+            "data_type": "PER-CUM",
+            "interval_minutes": interval_minutes,
+            "timestamp_semantics": "interval_end",
+            "series": series_evidence,
+        }
+
+    @staticmethod
+    @log_call
+    def apply_transfer_map_to_dss(
+        source_dss: str | Path,
+        transfer_map: Mapping[str, Any],
+        output_dss: str | Path,
+        output_pathname_selector: str,
+        *,
+        source_a_part: str,
+        source_run_name: str,
+        model_start: datetime,
+        model_end: datetime,
+        interval_minutes: int,
+        source_depth_units: str,
+        volume_tolerance: Mapping[str, Any],
+        readback_absolute_value_tolerance: float,
+    ) -> dict[str, Any]:
+        """Apply a compiled map and publish a verified RAS-grid DSS product."""
+        normalized_map = HmsSubbasinTransfer.validate_transfer_map(transfer_map)
+        tolerance = _normalized_volume_tolerance(volume_tolerance)
+        try:
+            readback_tolerance = float(readback_absolute_value_tolerance)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("readback tolerance must be numeric") from exc
+        if not math.isfinite(readback_tolerance) or readback_tolerance < 0:
+            raise ValueError("readback tolerance must be finite and nonnegative")
+        source_units = str(source_depth_units).strip().upper()
+        if source_units not in _DEPTH_UNIT_METERS:
+            raise ValueError("source_depth_units must be IN or MM")
+        HmsSubbasinTransfer._validate_output_selector(output_pathname_selector)
+
+        output = Path(output_dss).resolve()
+        audit_path = output.with_suffix(".audit.json")
+        manifest_path = output.with_suffix(".manifest.json")
+        for destination in (output, audit_path, manifest_path):
+            if destination.exists():
+                raise FileExistsError(f"Refusing to overwrite: {destination}")
+
+        series_by_subbasin, source_evidence = HmsSubbasinTransfer.read_excess_series(
+            source_dss,
+            normalized_map,
+            source_a_part=source_a_part,
+            source_run_name=source_run_name,
+            model_start=model_start,
+            model_end=model_end,
+            interval_minutes=interval_minutes,
+            source_depth_units=source_units,
+        )
+        interval_ends = pd.date_range(
+            start=model_start + timedelta(minutes=interval_minutes),
+            end=model_end,
+            freq=pd.Timedelta(minutes=interval_minutes),
+        )
+        target_grid = normalized_map["target_grid"]
+        rows, columns = target_grid["shape"]
+        frames = np.zeros((len(interval_ends), rows * columns), dtype=np.float64)
+        names = [item["subbasin"] for item in normalized_map["subbasins"]]
+        name_to_index = {name: index for index, name in enumerate(names)}
+        support_areas = np.zeros((len(names), rows * columns), dtype=np.float64)
+        for cell in normalized_map["cells"]:
+            name = cell["subbasin"]
+            if name is None:
+                continue
+            cell_id = cell["cell_id"]
+            frames[:, cell_id] = series_by_subbasin[name] * cell["depth_multiplier"]
+            support_areas[
+                name_to_index[name],
+                cell_id,
+            ] = cell["effective_area_square_meters"]
+        frames = frames.reshape((len(interval_ends), rows, columns))
+        support_areas = support_areas.reshape((len(names), rows, columns))
+        depth_unit_meters = _DEPTH_UNIT_METERS[source_units]
+        source_volumes = {
+            item["subbasin"]: (
+                series_by_subbasin[item["subbasin"]]
+                * depth_unit_meters
+                * item["source_area"]["square_meters"]
+            )
+            for item in normalized_map["subbasins"]
+        }
+        prepublication_volumes = {
+            name: np.sum(
+                frames * support_areas[index][np.newaxis, :, :],
+                axis=(1, 2),
+                dtype=np.float64,
+            )
+            * depth_unit_meters
+            for index, name in enumerate(names)
+        }
+        prepublication_evidence = _volume_evidence(
+            source_volumes,
+            prepublication_volumes,
+            interval_ends,
+            tolerance,
+        )
+        boundaries = [model_start, *interval_ends.to_pydatetime().tolist()]
+        write_result = HmsSubbasinTransfer._write_grid_subprocess(
+            output,
+            output_pathname_selector,
+            frames,
+            boundaries,
+            {
+                "cell_size": target_grid["cell_size_meters"],
+                "origin": target_grid["origin"],
+                "crs": target_grid["crs"],
+                "units": source_units,
+                "data_type": "PER-CUM",
+                "compression": "PRECIP_2_BYTE",
+                "interval_minutes": interval_minutes,
+            },
+            support_ids=names,
+            support_areas=support_areas,
+            readback_absolute_value_tolerance=readback_tolerance,
+            source_volumes=source_volumes,
+            interval_ends=interval_ends,
+            depth_unit_meters=depth_unit_meters,
+            volume_tolerance=tolerance,
+        )
+        if write_result.get("record_count") != len(interval_ends):
+            raise RuntimeError("Grid writer did not publish every model interval")
+        published_evidence = write_result.pop("published_volume_evidence")
+
+        audit: dict[str, Any] = {
+            "schema": HmsSubbasinTransfer.AUDIT_SCHEMA,
+            "method": HmsSubbasinTransfer.METHOD,
+            "algorithm": HmsSubbasinTransfer.ALGORITHM,
+            "transfer_map_sha256": normalized_map["transfer_map_sha256"],
+            "source": source_evidence,
+            "model_window": {
+                "start": model_start.isoformat(timespec="seconds"),
+                "end": model_end.isoformat(timespec="seconds"),
+                "interval_minutes": interval_minutes,
+                "step_count": len(interval_ends),
+                "timestamp_semantics": "interval_end",
+            },
+            "volume_tolerance": tolerance,
+            "prepublication_volume": prepublication_evidence,
+            "published_volume": published_evidence,
+            "readback": write_result["verification"],
+        }
+        audit["audit_sha256"] = _canonical_sha256(audit)
+        HmsSubbasinTransfer._write_json_new(audit_path, audit)
+
+        manifest: dict[str, Any] = {
+            "schema": HmsSubbasinTransfer.PRODUCT_SCHEMA,
+            "status": "qualification_only",
+            "forecast_eligible": False,
+            "method": HmsSubbasinTransfer.METHOD,
+            "algorithm": HmsSubbasinTransfer.ALGORITHM,
+            "transfer_map_sha256": normalized_map["transfer_map_sha256"],
+            "source": source_evidence,
+            "audit": {
+                "name": audit_path.name,
+                "size_bytes": audit_path.stat().st_size,
+                "sha256": _sha256_file(audit_path),
+                "audit_sha256": audit["audit_sha256"],
+            },
+            "output": {
+                "name": output.name,
+                "size_bytes": output.stat().st_size,
+                "sha256": _sha256_file(output),
+                "pathname_selector": output_pathname_selector,
+                "record_count": write_result["record_count"],
+                "first_pathname": write_result["first_pathname"],
+                "last_pathname": write_result["last_pathname"],
+                "start": model_start.isoformat(timespec="seconds"),
+                "end": model_end.isoformat(timespec="seconds"),
+                "interval_minutes": interval_minutes,
+                "units": source_units,
+                "data_type": "PER-CUM",
+            },
+            "volume": published_evidence,
+        }
+        manifest["manifest_sha256"] = _canonical_sha256(manifest)
+        HmsSubbasinTransfer._write_json_new(manifest_path, manifest)
+        return manifest
+
+    @staticmethod
+    def _write_grid_subprocess(
+        output: Path,
+        pathname: str,
+        frames: np.ndarray,
+        boundaries: list[datetime],
+        grid_info: Mapping[str, Any],
+        *,
+        support_ids: list[str],
+        support_areas: np.ndarray,
+        readback_absolute_value_tolerance: float,
+        source_volumes: Mapping[str, np.ndarray],
+        interval_ends: pd.DatetimeIndex,
+        depth_unit_meters: float,
+        volume_tolerance: Mapping[str, float],
+    ) -> dict[str, Any]:
+        """Write, reopen, and verify grid data before atomic publication."""
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix=f".{output.stem}-writer-",
+            dir=output.parent,
+        ) as stage_name:
+            stage = Path(stage_name)
+            data_path = stage / "frames.npy"
+            areas_path = stage / "effective-areas.npy"
+            request_path = stage / "request.json"
+            result_path = stage / "result.json"
+            staged_output = stage / output.name
+            np.save(data_path, np.asarray(frames, dtype=np.float32), allow_pickle=False)
+            np.save(
+                areas_path,
+                np.asarray(support_areas, dtype=np.float64),
+                allow_pickle=False,
+            )
+            request = {
+                "schema": "hms-commander/grid-writer-request/1.0",
+                "data": {"path": str(data_path), "sha256": _sha256_file(data_path)},
+                "output_dss": str(staged_output),
+                "pathname": pathname,
+                "times": [value.isoformat(timespec="seconds") for value in boundaries],
+                "grid_info": dict(grid_info),
+                "verification": {
+                    "effective_areas": {
+                        "path": str(areas_path),
+                        "sha256": _sha256_file(areas_path),
+                    },
+                    "absolute_value_tolerance": readback_absolute_value_tolerance,
+                    "expected_units": grid_info["units"],
+                    "expected_data_type": grid_info["data_type"],
+                    "expected_grid": {
+                        "shape": list(frames.shape[1:]),
+                        "cell_size": grid_info["cell_size"],
+                        "origin": list(grid_info["origin"]),
+                        "crs": grid_info["crs"],
+                    },
+                    "support_ids": support_ids,
+                },
+            }
+            request_path.write_text(
+                json.dumps(request, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "hms_commander.HmsGridWriterWorker",
+                    "--request",
+                    str(request_path),
+                    "--result",
+                    str(result_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+            if not result_path.is_file():
+                raise RuntimeError(
+                    "Grid writer produced no result; "
+                    f"exit={completed.returncode}, stderr={completed.stderr[-2000:]}"
+                )
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            if completed.returncode != 0 or result.get("status") != "succeeded":
+                error = result.get("error", {})
+                raise RuntimeError(
+                    "Grid writer failed: "
+                    f"{error.get('type', 'unknown')}: {error.get('message', '')}"
+                )
+            verification = result.get("verification")
+            if not isinstance(verification, dict) or verification.get("status") != (
+                "verified"
+            ):
+                raise RuntimeError("Grid writer produced no readback verification")
+            weighted = verification.get("weighted_depth_area_by_support")
+            if not isinstance(weighted, dict) or set(weighted) != set(support_ids):
+                raise RuntimeError("Grid writer readback support identities changed")
+            published_volumes = {
+                name: np.asarray(weighted[name], dtype=np.float64) * depth_unit_meters
+                for name in support_ids
+            }
+            published_evidence = _volume_evidence(
+                source_volumes,
+                published_volumes,
+                interval_ends,
+                volume_tolerance,
+            )
+            if not staged_output.is_file():
+                raise RuntimeError("Grid writer produced no staged DSS")
+            staged_output.replace(output)
+            result["published_volume_evidence"] = published_evidence
+            return result
+
+    @staticmethod
+    def _pathname_parts(pathname: str) -> list[str]:
+        if (
+            not isinstance(pathname, str)
+            or not pathname.startswith("/")
+            or not pathname.endswith("/")
+        ):
+            raise ValueError(f"Invalid six-part DSS pathname: {pathname!r}")
+        parts = pathname[1:-1].split("/")
+        if len(parts) != 6:
+            raise ValueError(f"Invalid six-part DSS pathname: {pathname!r}")
+        return parts
+
+    @staticmethod
+    def _interval_minutes_from_part(value: str) -> int | None:
+        normalized = re.sub(r"[^A-Z0-9]", "", str(value).upper())
+        match = re.fullmatch(r"(\d+)(MIN|MINS|MINUTE|MINUTES)", normalized)
+        if match:
+            return int(match.group(1))
+        match = re.fullmatch(r"(\d+)(HOUR|HOURS|HR|HRS)", normalized)
+        if match:
+            return int(match.group(1)) * 60
+        match = re.fullmatch(r"(\d+)(DAY|DAYS)", normalized)
+        if match:
+            return int(match.group(1)) * 24 * 60
+        return None
+
+    @staticmethod
+    def _validate_output_selector(pathname: str) -> None:
+        parts = HmsSubbasinTransfer._pathname_parts(pathname)
+        if (
+            parts[3]
+            or parts[4]
+            or not all(parts[index] for index in (0, 1, 2, 5))
+            or parts[2].casefold() != "precipitation"
+        ):
+            raise ValueError(
+                "Output selector requires A/B/PRECIPITATION/F and blank D/E parts"
+            )
+
+    @staticmethod
+    def _write_json_new(path: Path, payload: Mapping[str, Any]) -> None:
+        if path.exists():
+            raise FileExistsError(f"Refusing to overwrite JSON artifact: {path}")
+        content = json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + "\n"
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        temporary.write_text(content, encoding="utf-8")
+        temporary.replace(path)
 
     @staticmethod
     @log_call

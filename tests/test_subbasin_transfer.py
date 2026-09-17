@@ -5,9 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 from copy import deepcopy
+from datetime import datetime, timedelta
 from importlib.resources import files
 
 import geopandas as gpd
+import numpy as np
+import pandas as pd
 import pytest
 from shapely.geometry import box
 
@@ -302,10 +305,245 @@ def test_compile_records_source_crs_when_reprojection_is_required() -> None:
 
 
 def test_packaged_schema_matches_public_contract() -> None:
-    schema_path = files("hms_commander.contracts").joinpath(
-        "subbasin-volume-transfer-map-v1.0.schema.json"
-    )
+    contracts = files("hms_commander.contracts")
+    schema_path = contracts.joinpath("subbasin-volume-transfer-map-v1.0.schema.json")
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
 
     assert schema["$id"] == HmsSubbasinTransfer.SCHEMA
     assert schema["properties"]["method"]["const"] == (HmsSubbasinTransfer.METHOD)
+    audit_schema = json.loads(
+        contracts.joinpath("subbasin-volume-transfer-audit-v1.0.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    product_schema = json.loads(
+        contracts.joinpath("subbasin-volume-excess-product-v1.0.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert audit_schema["$id"] == HmsSubbasinTransfer.AUDIT_SCHEMA
+    assert audit_schema["$defs"]["source"]["properties"]["a_part"] == {"type": "string"}
+    assert product_schema["$id"] == HmsSubbasinTransfer.PRODUCT_SCHEMA
+
+
+def _source_paths() -> list[str]:
+    return [
+        "//A/PRECIP-EXCESS/01Jan2020/5Minute/RUN:Accepted/",
+        "//A/PRECIP-EXCESS/02Jan2020/5Minute/RUN:Accepted/",
+        "//B/PRECIP-EXCESS/01Jan2020/5Minute/RUN:Accepted/",
+        "//B/PRECIP-EXCESS/02Jan2020/5Minute/RUN:Accepted/",
+    ]
+
+
+def _mock_source_dss(tmp_path, monkeypatch, *, shifted: bool = False):
+    from hms_commander import HmsDss
+
+    source = tmp_path / "results.dss"
+    source.write_bytes(b"fixture HMS DSS")
+    monkeypatch.setattr(HmsDss, "get_catalog", staticmethod(lambda _: _source_paths()))
+
+    def read_timeseries(_source, pathname):
+        start = datetime(2020, 1, 1)
+        offset = 0 if shifted else 5
+        times = [start + timedelta(minutes=offset + 5 * index) for index in range(3)]
+        values = [1.0, 2.0, 3.0] if "/A/" in pathname else [0.5, 1.0, 1.5]
+        frame = pd.DataFrame({"value": values}, index=pd.DatetimeIndex(times))
+        frame.attrs.update({"units": "IN", "type": "PER-CUM", "interval": 5})
+        return frame
+
+    monkeypatch.setattr(HmsDss, "read_timeseries", staticmethod(read_timeseries))
+    return source
+
+
+def test_read_excess_series_requires_exact_interval_end_coverage(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    source = _mock_source_dss(tmp_path, monkeypatch)
+
+    series, evidence = HmsSubbasinTransfer.read_excess_series(
+        source,
+        _compile(),
+        source_a_part="",
+        source_run_name="Accepted",
+        model_start=datetime(2020, 1, 1),
+        model_end=datetime(2020, 1, 1, 0, 15),
+        interval_minutes=5,
+        source_depth_units="IN",
+    )
+
+    assert series["A"].tolist() == [1.0, 2.0, 3.0]
+    assert series["B"].tolist() == [0.5, 1.0, 1.5]
+    assert evidence["timestamp_semantics"] == "interval_end"
+    assert [item["subbasin"] for item in evidence["series"]] == ["A", "B"]
+    assert all(len(item["catalog_pathnames"]) == 2 for item in evidence["series"])
+    assert evidence["series"][0]["pathname_family"] == {
+        "a_part": "",
+        "b_part": "A",
+        "c_part": "PRECIP-EXCESS",
+        "e_part": "5Minute",
+        "f_part": "RUN:Accepted",
+    }
+
+
+def test_read_excess_series_rejects_interval_start_shift(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    source = _mock_source_dss(tmp_path, monkeypatch, shifted=True)
+
+    with pytest.raises(ValueError, match="interval-end model coverage"):
+        HmsSubbasinTransfer.read_excess_series(
+            source,
+            _compile(),
+            source_a_part="",
+            source_run_name="Accepted",
+            model_start=datetime(2020, 1, 1),
+            model_end=datetime(2020, 1, 1, 0, 15),
+            interval_minutes=5,
+            source_depth_units="IN",
+        )
+
+
+def test_read_excess_series_rejects_duplicate_exact_pathnames(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from hms_commander import HmsDss
+
+    source = _mock_source_dss(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        HmsDss,
+        "get_catalog",
+        staticmethod(lambda _: [*_source_paths(), _source_paths()[0]]),
+    )
+
+    with pytest.raises(ValueError, match="catalog entries.*duplicated"):
+        HmsSubbasinTransfer.read_excess_series(
+            source,
+            _compile(),
+            source_a_part="",
+            source_run_name="Accepted",
+            model_start=datetime(2020, 1, 1),
+            model_end=datetime(2020, 1, 1, 0, 15),
+            interval_minutes=5,
+            source_depth_units="IN",
+        )
+
+
+def test_apply_transfer_map_publishes_verified_volume_evidence(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from hms_commander.HmsSubbasinTransfer import _volume_evidence
+
+    source = _mock_source_dss(tmp_path, monkeypatch)
+    output = tmp_path / "ras-excess.dss"
+    captured_frames = []
+
+    def write_grid(
+        destination,
+        pathname,
+        frames,
+        boundaries,
+        grid_info,
+        **kwargs,
+    ):
+        captured_frames.append(frames.copy())
+        assert pathname == "/SHG/BASIN/PRECIPITATION///EXCESS/"
+        assert boundaries == [
+            datetime(2020, 1, 1),
+            datetime(2020, 1, 1, 0, 5),
+            datetime(2020, 1, 1, 0, 10),
+            datetime(2020, 1, 1, 0, 15),
+        ]
+        assert grid_info["data_type"] == "PER-CUM"
+        destination.write_bytes(b"verified grid DSS")
+        target_volumes = {
+            name: values.copy() for name, values in kwargs["source_volumes"].items()
+        }
+        return {
+            "status": "succeeded",
+            "record_count": 3,
+            "first_pathname": "first",
+            "last_pathname": "last",
+            "verification": {
+                "status": "verified",
+                "absolute_value_tolerance": 0.01,
+                "maximum_absolute_value_difference": 0.001,
+                "weighted_depth_area_by_support": {
+                    name: (values / 0.0254).tolist()
+                    for name, values in target_volumes.items()
+                },
+            },
+            "published_volume_evidence": _volume_evidence(
+                kwargs["source_volumes"],
+                target_volumes,
+                kwargs["interval_ends"],
+                kwargs["volume_tolerance"],
+            ),
+        }
+
+    monkeypatch.setattr(
+        HmsSubbasinTransfer,
+        "_write_grid_subprocess",
+        staticmethod(write_grid),
+    )
+    manifest = HmsSubbasinTransfer.apply_transfer_map_to_dss(
+        source,
+        _compile(),
+        output,
+        "/SHG/BASIN/PRECIPITATION///EXCESS/",
+        source_a_part="",
+        source_run_name="Accepted",
+        model_start=datetime(2020, 1, 1),
+        model_end=datetime(2020, 1, 1, 0, 15),
+        interval_minutes=5,
+        source_depth_units="IN",
+        volume_tolerance={
+            "absolute_cubic_meters": 1.0e-6,
+            "relative_fraction": 1.0e-12,
+        },
+        readback_absolute_value_tolerance=0.01,
+    )
+
+    frames = captured_frames[0]
+    assert frames.shape == (3, 2, 3)
+    assert np.all(frames[:, 0, 2] == 0)
+    assert np.all(frames[:, 1, 0] == 0)
+    assert np.all(frames[:, 1, 2] == 0)
+    assert manifest["schema"] == ("hms-commander/subbasin-volume-excess-product/1.0")
+    assert manifest["method"] == "hms-subbasin-volume-conserving-v1"
+    assert manifest["volume"]["aggregate"]["residual_cubic_meters"] == 0.0
+    unsigned_manifest = deepcopy(manifest)
+    assert unsigned_manifest.pop("manifest_sha256") == _canonical_sha256(
+        unsigned_manifest
+    )
+    audit = json.loads(output.with_suffix(".audit.json").read_text(encoding="utf-8"))
+    unsigned_audit = deepcopy(audit)
+    assert unsigned_audit.pop("audit_sha256") == _canonical_sha256(unsigned_audit)
+    assert output.with_suffix(".manifest.json").is_file()
+
+
+def test_volume_evidence_rejects_residual_outside_explicit_tolerance() -> None:
+    from hms_commander.HmsSubbasinTransfer import _volume_evidence
+
+    with pytest.raises(ValueError, match="Volume residual exceeds tolerance"):
+        _volume_evidence(
+            {"A": np.asarray([100.0])},
+            {"A": np.asarray([101.0])},
+            pd.DatetimeIndex([datetime(2020, 1, 1, 0, 5)]),
+            {"absolute_cubic_meters": 0.1, "relative_fraction": 0.001},
+        )
+
+
+def test_volume_evidence_rejects_nonfinite_values() -> None:
+    from hms_commander.HmsSubbasinTransfer import _volume_evidence
+
+    with pytest.raises(ValueError, match="finite and nonnegative"):
+        _volume_evidence(
+            {"A": np.asarray([np.inf])},
+            {"A": np.asarray([np.inf])},
+            pd.DatetimeIndex([datetime(2020, 1, 1, 0, 5)]),
+            {"absolute_cubic_meters": 1.0e-6, "relative_fraction": 1.0e-12},
+        )

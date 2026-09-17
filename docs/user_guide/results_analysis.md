@@ -281,7 +281,43 @@ subbasins, positive-area polygon overlap, ambiguous center assignments,
 subbasins without RAS receiving support, changed application-area identities,
 and inconsistent denominators. DSS series selection, interval-end time
 alignment, precipitation-grid writing, and volume-residual evidence belong to
-the runtime application stage and are not performed by this compiler.
+the runtime application stage.
+
+Use `apply_transfer_map_to_dss` for that runtime stage. The method discovers
+one logical `PRECIP-EXCESS` pathname family per selected subbasin using the
+requested A-part, run identity, and interval. A family may contain multiple
+dated D-part catalog records; HMS output commonly uses a blank A-part. Every
+series must declare the requested units, `PER-CUM` type, and exact interval-end
+coverage of the model window; the method never trims, shifts, repeats, or
+interpolates source values.
+
+```python
+manifest = HmsSubbasinTransfer.apply_transfer_map_to_dss(
+    "run/results.dss",
+    transfer_map,
+    "products/ras-gridded-excess.dss",
+    "/SHG/BASIN/PRECIPITATION///EXCESS/",
+    source_a_part="",
+    source_run_name="Accepted Run",
+    model_start=model_start,
+    model_end=model_end,
+    interval_minutes=5,
+    source_depth_units="IN",
+    volume_tolerance={
+        "absolute_cubic_meters": 0.01,
+        "relative_fraction": 1.0e-8,
+    },
+    readback_absolute_value_tolerance=0.001,
+)
+```
+
+The grid is first written to a staging location by an isolated child process.
+That process reopens every DSS record and verifies its time window, spatial
+definition, units, data type, values, and per-subbasin area-weighted depths.
+Only a verified output is moved to its final name. The resulting audit records
+prepublication and reopened-DSS residuals for every interval, each subbasin,
+and the complete run. Both numerical tolerances are explicit inputs and become
+part of the evidence.
 
 The audit deliberately does not apply engineering thresholds or declare the
 transfer acceptable for forecasting. Those decisions belong to the consuming
