@@ -323,6 +323,15 @@ The audit deliberately does not apply engineering thresholds or declare the
 transfer acceptable for forecasting. Those decisions belong to the consuming
 study's versioned qualification policy.
 
+`HmsScenarioWorker` invokes this runtime path when `spatial_transfer.method`
+is `hms-subbasin-volume-conserving-v1`. The request authenticates the compiled
+map and pins the output selector, source A-part and units, volume tolerances,
+and DSS readback tolerance. The worker derives the source run name from its
+cloned workspace so the request cannot drift from the HMS run that actually
+produced the source DSS. Its result publishes `volume` evidence rather than
+the nearest-cell method's `metrics` evidence; both variants retain the same
+qualification-only, forecast-ineligible disposition.
+
 The output directory must not already exist. It contains:
 
 - `hydrologic-hydrographs.csv`, a deterministic portable table;

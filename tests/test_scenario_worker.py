@@ -17,6 +17,7 @@ from hms_commander import (
     HmsRunArtifact,
     HmsScenarioWorker,
     HmsScenarioWorkspace,
+    HmsSubbasinTransfer,
 )
 
 FLOW_PATH = "//OUTLET/FLOW//5Minute/RUN:SCENARIO/"
@@ -94,15 +95,16 @@ def _install_success_fakes(monkeypatch, request: dict) -> dict[str, int]:
         )
         if request.get("spatial_transfer") is not None:
             transfer = request["spatial_transfer"]
-            basin_source = Path(request["source_model"]["project"]) / transfer[
-                "basin_sqlite"
-            ]
-            (workspace_path / transfer["basin_sqlite"]).write_bytes(
-                basin_source.read_bytes()
-            )
-            results = workspace_path / "results"
-            results.mkdir()
-            (results / "RUN_FF_lwi-r3-rank-001.h5").write_bytes(b"result hdf")
+            if transfer.get("method") != HmsSubbasinTransfer.METHOD:
+                basin_source = (
+                    Path(request["source_model"]["project"]) / transfer["basin_sqlite"]
+                )
+                (workspace_path / transfer["basin_sqlite"]).write_bytes(
+                    basin_source.read_bytes()
+                )
+                results = workspace_path / "results"
+                results.mkdir()
+                (results / "RUN_FF_lwi-r3-rank-001.h5").write_bytes(b"result hdf")
         return HmsScenarioWorkspace(
             scenario_id="lwi-r3-rank-001",
             source_project=Path(request["source_model"]["project"]),
@@ -212,11 +214,44 @@ def _install_success_fakes(monkeypatch, request: dict) -> dict[str, int]:
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
             return manifest
 
-        monkeypatch.setattr(
-            worker_module.HmsSpatialTransfer,
-            "export_excess_to_grid",
-            staticmethod(export_transfer),
-        )
+        transfer = request["spatial_transfer"]
+        if transfer.get("method") == HmsSubbasinTransfer.METHOD:
+
+            def export_subbasin_transfer(*args, **kwargs):
+                calls["transfer"] += 1
+                output = Path(args[2])
+                output.parent.mkdir(parents=True)
+                output.write_bytes(b"ras subbasin volume excess")
+                audit = output.with_suffix(".audit.json")
+                audit.write_text("{}", encoding="utf-8")
+                manifest_path = output.with_suffix(".manifest.json")
+                manifest = {
+                    "schema": HmsSubbasinTransfer.PRODUCT_SCHEMA,
+                    "status": "qualification_only",
+                    "forecast_eligible": False,
+                    "output": {
+                        "pathname_selector": args[3],
+                        "record_count": 288,
+                    },
+                    "volume": {
+                        "aggregate": {"within_tolerance": True},
+                    },
+                }
+                assert kwargs["source_run_name"] == "FF_lwi-r3-rank-001"
+                manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                return manifest
+
+            monkeypatch.setattr(
+                worker_module.HmsSubbasinTransfer,
+                "apply_transfer_map_to_dss",
+                staticmethod(export_subbasin_transfer),
+            )
+        else:
+            monkeypatch.setattr(
+                worker_module.HmsSpatialTransfer,
+                "export_excess_to_grid",
+                staticmethod(export_transfer),
+            )
     return calls
 
 
@@ -368,6 +403,70 @@ def test_worker_rejects_spatial_transfer_identity_drift(tmp_path):
         "source_value_multiplier": 1.0,
         "fingerprint_tolerance": 1.0e-6,
         "excess_depth_units": "IN",
+        "status": "qualification_only",
+        "forecast_eligible": False,
+    }
+    request_path.write_text(json.dumps(request), encoding="utf-8")
+
+    assert HmsScenarioWorker.run(request_path, result_path) == 2
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    assert result["error"]["classification"] == "spatial_transfer_identity"
+    assert not Path(request["workspace"]).exists()
+
+
+def test_worker_exports_authenticated_subbasin_volume_transfer(
+    tmp_path,
+    monkeypatch,
+):
+    request, request_path, result_path = _request(tmp_path)
+    transfer_map = tmp_path / "subbasin-volume-transfer-map.json"
+    transfer_map.write_text('{"schema":"test-map"}', encoding="utf-8")
+    request["spatial_transfer"] = {
+        "method": HmsSubbasinTransfer.METHOD,
+        "transfer_map": str(transfer_map),
+        "transfer_map_sha256": _sha256(transfer_map),
+        "output_pathname": "/SHG/BASIN/PRECIPITATION///EXCESS/",
+        "source_a_part": "",
+        "source_depth_units": "IN",
+        "volume_tolerance": {
+            "absolute_cubic_meters": 1.0e-6,
+            "relative_fraction": 1.0e-12,
+        },
+        "readback_absolute_value_tolerance": 0.01,
+        "status": "qualification_only",
+        "forecast_eligible": False,
+    }
+    request_path.write_text(json.dumps(request), encoding="utf-8")
+    calls = _install_success_fakes(monkeypatch, request)
+
+    assert HmsScenarioWorker.run(request_path, result_path) == 0
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    transfer = result["products"]["spatial_transfer"]
+    assert transfer["schema"] == HmsSubbasinTransfer.PRODUCT_SCHEMA
+    assert transfer["status"] == "qualification_only"
+    assert transfer["forecast_eligible"] is False
+    assert transfer["record_count"] == 288
+    assert transfer["volume"]["aggregate"]["within_tolerance"] is True
+    assert "metrics" not in transfer
+    assert calls == {"prepare": 1, "execute": 1, "export": 1, "transfer": 1}
+
+
+def test_worker_rejects_subbasin_transfer_map_identity_drift(tmp_path):
+    request, request_path, result_path = _request(tmp_path)
+    transfer_map = tmp_path / "subbasin-volume-transfer-map.json"
+    transfer_map.write_text('{"schema":"test-map"}', encoding="utf-8")
+    request["spatial_transfer"] = {
+        "method": HmsSubbasinTransfer.METHOD,
+        "transfer_map": str(transfer_map),
+        "transfer_map_sha256": "f" * 64,
+        "output_pathname": "/SHG/BASIN/PRECIPITATION///EXCESS/",
+        "source_a_part": "",
+        "source_depth_units": "IN",
+        "volume_tolerance": {
+            "absolute_cubic_meters": 1.0e-6,
+            "relative_fraction": 1.0e-12,
+        },
+        "readback_absolute_value_tolerance": 0.01,
         "status": "qualification_only",
         "forecast_eligible": False,
     }

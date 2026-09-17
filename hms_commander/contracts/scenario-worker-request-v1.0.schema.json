@@ -69,38 +69,10 @@
       }
     },
     "spatial_transfer": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "basin_sqlite",
-        "basin_sqlite_sha256",
-        "source_grid_definition",
-        "source_grid_definition_sha256",
-        "target_grid_definition",
-        "target_grid_definition_sha256",
-        "output_pathname",
-        "source_interval_minutes",
-        "source_value_multiplier",
-        "fingerprint_tolerance",
-        "excess_depth_units",
-        "status",
-        "forecast_eligible"
-      ],
-      "properties": {
-        "basin_sqlite": {"type": "string", "minLength": 1},
-        "basin_sqlite_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-        "source_grid_definition": {"type": "string", "minLength": 1},
-        "source_grid_definition_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-        "target_grid_definition": {"type": "string", "minLength": 1},
-        "target_grid_definition_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-        "output_pathname": {"type": "string", "minLength": 1},
-        "source_interval_minutes": {"type": "integer", "minimum": 1},
-        "source_value_multiplier": {"type": "number", "exclusiveMinimum": 0},
-        "fingerprint_tolerance": {"type": "number", "minimum": 0},
-        "excess_depth_units": {"enum": ["IN", "MM"]},
-        "status": {"const": "qualification_only"},
-        "forecast_eligible": {"const": false}
-      }
+      "oneOf": [
+        {"$ref": "#/$defs/nearestCellSpatialTransfer"},
+        {"$ref": "#/$defs/subbasinVolumeSpatialTransfer"}
+      ]
     },
     "model_window": {
       "type": "object",
@@ -157,6 +129,78 @@
         "timeout_seconds": {"type": "integer", "minimum": 1},
         "hms_executable": {"type": "string", "minLength": 1},
         "max_memory": {"type": "string", "minLength": 1}
+      }
+    }
+  },
+  "$defs": {
+    "nearestCellSpatialTransfer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "basin_sqlite",
+        "basin_sqlite_sha256",
+        "source_grid_definition",
+        "source_grid_definition_sha256",
+        "target_grid_definition",
+        "target_grid_definition_sha256",
+        "output_pathname",
+        "source_interval_minutes",
+        "source_value_multiplier",
+        "fingerprint_tolerance",
+        "excess_depth_units",
+        "status",
+        "forecast_eligible"
+      ],
+      "properties": {
+        "basin_sqlite": {"type": "string", "minLength": 1},
+        "basin_sqlite_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "source_grid_definition": {"type": "string", "minLength": 1},
+        "source_grid_definition_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "target_grid_definition": {"type": "string", "minLength": 1},
+        "target_grid_definition_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "output_pathname": {"type": "string", "minLength": 1},
+        "source_interval_minutes": {"type": "integer", "minimum": 1},
+        "source_value_multiplier": {"type": "number", "exclusiveMinimum": 0},
+        "fingerprint_tolerance": {"type": "number", "minimum": 0},
+        "excess_depth_units": {"enum": ["IN", "MM"]},
+        "status": {"const": "qualification_only"},
+        "forecast_eligible": {"const": false}
+      }
+    },
+    "subbasinVolumeSpatialTransfer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "transfer_map",
+        "transfer_map_sha256",
+        "output_pathname",
+        "source_a_part",
+        "source_depth_units",
+        "volume_tolerance",
+        "readback_absolute_value_tolerance",
+        "status",
+        "forecast_eligible"
+      ],
+      "properties": {
+        "method": {"const": "hms-subbasin-volume-conserving-v1"},
+        "transfer_map": {"type": "string", "minLength": 1},
+        "transfer_map_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "output_pathname": {"type": "string", "minLength": 1},
+        "source_a_part": {"type": "string"},
+        "source_depth_units": {"enum": ["IN", "MM"]},
+        "volume_tolerance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["absolute_cubic_meters", "relative_fraction"],
+          "properties": {
+            "absolute_cubic_meters": {"type": "number", "minimum": 0},
+            "relative_fraction": {"type": "number", "minimum": 0}
+          }
+        },
+        "readback_absolute_value_tolerance": {"type": "number", "minimum": 0},
+        "status": {"const": "qualification_only"},
+        "forecast_eligible": {"const": false}
       }
     }
   }
