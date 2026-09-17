@@ -73,9 +73,7 @@ def _require_optional_dependencies() -> tuple[Any, Any, Any, Any, Any]:
         from scipy.optimize import linear_sum_assignment
         from scipy.spatial import cKDTree
     except ImportError as exc:  # pragma: no cover - depends on environment
-        raise ImportError(
-            "HmsSpatialTransfer requires hms-commander[gis]"
-        ) from exc
+        raise ImportError("HmsSpatialTransfer requires hms-commander[gis]") from exc
     return gpd, h5py, CRS, linear_sum_assignment, cKDTree
 
 
@@ -285,12 +283,8 @@ def _volume_metrics(
     cubic_meters_per_depth_unit = (
         cell_area_square_meters * _DEPTH_UNIT_METERS[depth_units]
     )
-    direct_volume = float(
-        cumulative_depth[direct].sum() * cubic_meters_per_depth_unit
-    )
-    filled_volume = float(
-        cumulative_depth[~direct].sum() * cubic_meters_per_depth_unit
-    )
+    direct_volume = float(cumulative_depth[direct].sum() * cubic_meters_per_depth_unit)
+    filled_volume = float(cumulative_depth[~direct].sum() * cubic_meters_per_depth_unit)
     total_volume = direct_volume + filled_volume
 
     def values(scale: float) -> dict[str, float]:
@@ -318,6 +312,9 @@ class HmsSpatialTransfer:
     """Static namespace for deterministic HMS grid-transfer evidence."""
 
     SCHEMA = "hms-commander/spatial-transfer-audit/1.0"
+    PRODUCT_SCHEMA = "hms-commander/gridded-excess-product/1.0"
+    METHOD = "nearest-active-hms-cell"
+    ALGORITHM = "polygon-containment-then-nearest-active-centroid"
 
     @staticmethod
     def _transfer_excess_to_grid(
@@ -385,10 +382,7 @@ class HmsSpatialTransfer:
         normalized_depth_units = str(excess_depth_units).upper()
         if normalized_depth_units not in _DEPTH_UNIT_METERS:
             raise ValueError("excess_depth_units must be 'IN' or 'MM'")
-        if (
-            not math.isfinite(source_value_multiplier)
-            or source_value_multiplier <= 0
-        ):
+        if not math.isfinite(source_value_multiplier) or source_value_multiplier <= 0:
             raise ValueError("source_value_multiplier must be positive")
         if fingerprint_tolerance < 0 or not math.isfinite(fingerprint_tolerance):
             raise ValueError("fingerprint_tolerance must be finite and non-negative")
@@ -420,8 +414,7 @@ class HmsSpatialTransfer:
         missing_columns = required_columns - set(computation_cells.columns)
         if missing_columns:
             raise ValueError(
-                "HMS discretization is missing: "
-                + ", ".join(sorted(missing_columns))
+                "HMS discretization is missing: " + ", ".join(sorted(missing_columns))
             )
         if computation_cells.empty or computation_cells.crs is None:
             raise ValueError("HMS discretization must contain cells with a CRS")
@@ -492,9 +485,7 @@ class HmsSpatialTransfer:
                     raise ValueError(
                         f"HMS incremental excess is invalid for {element_name!r}"
                     )
-                if not np.isfinite(precipitation).all() or (
-                    precipitation < 0
-                ).any():
+                if not np.isfinite(precipitation).all() or (precipitation < 0).any():
                     raise ValueError(
                         f"HMS precipitation is invalid for {element_name!r}"
                     )
@@ -519,16 +510,15 @@ class HmsSpatialTransfer:
                     )
 
                 source_fingerprints = (
-                    fingerprint_cube[:, rows, columns].T
-                    * source_value_multiplier
+                    fingerprint_cube[:, rows, columns].T * source_value_multiplier
                 )
                 if not np.isfinite(source_fingerprints).all():
                     raise ValueError(
                         f"Source fingerprints are invalid for {element_name!r}"
                     )
                 result_fingerprints = precipitation[
-                    : fingerprint_cube.shape[0] * fingerprint_stride
-                    : fingerprint_stride,
+                    : fingerprint_cube.shape[0]
+                    * fingerprint_stride : fingerprint_stride,
                     :,
                 ].T
                 if result_fingerprints.shape != source_fingerprints.shape:
@@ -536,8 +526,7 @@ class HmsSpatialTransfer:
                         f"Fingerprint window does not match for {element_name!r}"
                     )
                 differences = (
-                    result_fingerprints[:, None, :]
-                    - source_fingerprints[None, :, :]
+                    result_fingerprints[:, None, :] - source_fingerprints[None, :, :]
                 )
                 costs = np.mean(np.square(differences), axis=2)
                 result_columns, cell_rows = linear_sum_assignment(costs)
@@ -549,8 +538,8 @@ class HmsSpatialTransfer:
                 result_for_cell[cell_rows] = result_columns
                 residual = (
                     precipitation[
-                        : fingerprint_cube.shape[0] * fingerprint_stride
-                        : fingerprint_stride,
+                        : fingerprint_cube.shape[0]
+                        * fingerprint_stride : fingerprint_stride,
                         result_for_cell,
                     ].T
                     - source_fingerprints
@@ -600,9 +589,7 @@ class HmsSpatialTransfer:
         target_centers = _target_centers(target_grid)
         target_points = gpd.GeoDataFrame(
             {"target_index": np.arange(len(target_centers), dtype=int)},
-            geometry=gpd.points_from_xy(
-                target_centers[:, 0], target_centers[:, 1]
-            ),
+            geometry=gpd.points_from_xy(target_centers[:, 0], target_centers[:, 1]),
             crs=computation_cells.crs,
         )
         contained = gpd.sjoin(
@@ -631,9 +618,9 @@ class HmsSpatialTransfer:
         )
         direct = contained["active_index"].notna().to_numpy(dtype=bool)
         selected_indexes = nearest_indexes.astype(int)
-        selected_indexes[direct] = contained.loc[
-            direct, "active_index"
-        ].to_numpy(dtype=int)
+        selected_indexes[direct] = contained.loc[direct, "active_index"].to_numpy(
+            dtype=int
+        )
         transferred = excess_by_cell[:, selected_indexes]
         if not np.isfinite(transferred).all() or (transferred < 0).any():
             raise ValueError("Transferred excess contains invalid values")
@@ -643,13 +630,12 @@ class HmsSpatialTransfer:
         cell_area = target_grid["cell_area_square_meters"]
         report: dict[str, Any] = {
             "schema": HmsSpatialTransfer.SCHEMA,
-            "method": "polygon-containment-then-nearest-active-centroid",
+            "method": HmsSpatialTransfer.METHOD,
+            "algorithm": HmsSpatialTransfer.ALGORITHM,
             "source_identity": {
                 "hms_result_hdf_sha256": _sha256_file(hdf_path),
                 "hms_basin_sqlite_sha256": _sha256_file(sqlite_path),
-                "source_fingerprint_cube_sha256": _array_sha256(
-                    fingerprint_cube
-                ),
+                "source_fingerprint_cube_sha256": _array_sha256(fingerprint_cube),
             },
             "source_grid": source_grid,
             "target_grid": target_grid,
@@ -674,9 +660,7 @@ class HmsSpatialTransfer:
                 "target_area_square_meters": target_count * cell_area,
                 "direct_area_square_meters": int(direct.sum()) * cell_area,
                 "unsupported_area_square_meters": unsupported_count * cell_area,
-                "nearest_fill_distance": _distance_metrics(
-                    nearest_distances[~direct]
-                ),
+                "nearest_fill_distance": _distance_metrics(nearest_distances[~direct]),
                 "volume_effect": _volume_metrics(
                     transferred,
                     direct,
@@ -933,10 +917,11 @@ class HmsSpatialTransfer:
             raise RuntimeError("RAS-grid excess DSS write did not produce every frame")
         HmsSpatialTransfer.write_audit(audit, audit_path)
         manifest: dict[str, Any] = {
-            "schema": "hms-commander/gridded-excess-product/1.0",
+            "schema": HmsSpatialTransfer.PRODUCT_SCHEMA,
             "status": "qualification_only",
             "forecast_eligible": False,
-            "method": audit["method"],
+            "method": HmsSpatialTransfer.METHOD,
+            "algorithm": audit["algorithm"],
             "source": source_evidence,
             "hms_result_hdf": {
                 "path": str(Path(hms_result_hdf).resolve()),

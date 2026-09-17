@@ -175,6 +175,12 @@ API reads the HMS result HDF and basin SQLite, resolves result columns to
 computation cells, and reports raw support, nearest-fill distance, area, and
 volume-effect metrics.
 
+The product's stable transfer-method identifier is
+`nearest-active-hms-cell`. Its audit records the more precise implementation
+label `polygon-containment-then-nearest-active-centroid` separately as
+`algorithm`. Consumers select behavior by `method`; the algorithm label
+preserves diagnostic detail without creating a second public method name.
+
 `excess_depth_units` must match the incremental-excess dataset's HDF `units`
 attribute; the audit rejects a mismatch before calculating volume.
 
@@ -231,9 +237,100 @@ and qualification-only disposition. The worker result exposes the product
 manifest, DSS, audit, metrics, selector, and record count for downstream
 orchestration without reopening the HMS result HDF.
 
+## Compile a subbasin-volume transfer map
+
+`HmsSubbasinTransfer` implements the static-map portion of
+`hms-subbasin-volume-conserving-v1`. It is an additional method, not a
+replacement for `nearest-active-hms-cell`.
+
+The compiler consumes explicit HMS source areas and units, selected subbasin
+polygons, and a RAS Commander `precipitation-application-area` artifact. It
+assigns each positive-area target cell by its center point, then calculates:
+
+```text
+depth multiplier = HMS source area / assigned effective RAS receiving area
+```
+
+This guarantees that a uniform source depth produces the same per-subbasin
+volume after transfer. Partial edge cells use the effective area authenticated
+from the exact RAS mesh; unassigned or outside-support cells have a zero
+multiplier.
+
+```python
+from hms_commander import HmsSubbasinTransfer
+
+transfer_map = HmsSubbasinTransfer.compile_transfer_map(
+    subbasin_geodataframe,
+    ras_application_area,
+    ["Subbasin A", "Subbasin B"],
+    {
+        "project_id": "accepted-hms-project",
+        "basin_model_id": "single-plan-basin",
+        "basin_file": basin_file_identity,
+        "geometry_source": geometry_file_identity,
+    },
+)
+HmsSubbasinTransfer.write_transfer_map(
+    transfer_map,
+    "products/subbasin-volume-transfer-map.json",
+)
+```
+
+Compilation rejects implicit or unsupported area units, missing selected
+subbasins, positive-area polygon overlap, ambiguous center assignments,
+subbasins without RAS receiving support, changed application-area identities,
+and inconsistent denominators. DSS series selection, interval-end time
+alignment, precipitation-grid writing, and volume-residual evidence belong to
+the runtime application stage.
+
+Use `apply_transfer_map_to_dss` for that runtime stage. The method discovers
+one logical `PRECIP-EXCESS` pathname family per selected subbasin using the
+requested A-part, run identity, and interval. A family may contain multiple
+dated D-part catalog records; HMS output commonly uses a blank A-part. Every
+series must declare the requested units, `PER-CUM` type, and exact interval-end
+coverage of the model window; the method never trims, shifts, repeats, or
+interpolates source values.
+
+```python
+manifest = HmsSubbasinTransfer.apply_transfer_map_to_dss(
+    "run/results.dss",
+    transfer_map,
+    "products/ras-gridded-excess.dss",
+    "/SHG/BASIN/PRECIPITATION///EXCESS/",
+    source_a_part="",
+    source_run_name="Accepted Run",
+    model_start=model_start,
+    model_end=model_end,
+    interval_minutes=5,
+    source_depth_units="IN",
+    volume_tolerance={
+        "absolute_cubic_meters": 0.01,
+        "relative_fraction": 1.0e-8,
+    },
+    readback_absolute_value_tolerance=0.001,
+)
+```
+
+The grid is first written to a staging location by an isolated child process.
+That process reopens every DSS record and verifies its time window, spatial
+definition, units, data type, values, and per-subbasin area-weighted depths.
+Only a verified output is moved to its final name. The resulting audit records
+prepublication and reopened-DSS residuals for every interval, each subbasin,
+and the complete run. Both numerical tolerances are explicit inputs and become
+part of the evidence.
+
 The audit deliberately does not apply engineering thresholds or declare the
 transfer acceptable for forecasting. Those decisions belong to the consuming
 study's versioned qualification policy.
+
+`HmsScenarioWorker` invokes this runtime path when `spatial_transfer.method`
+is `hms-subbasin-volume-conserving-v1`. The request authenticates the compiled
+map and pins the output selector, source A-part and units, volume tolerances,
+and DSS readback tolerance. The worker derives the source run name from its
+cloned workspace so the request cannot drift from the HMS run that actually
+produced the source DSS. Its result publishes `volume` evidence rather than
+the nearest-cell method's `metrics` evidence; both variants retain the same
+qualification-only, forecast-ineligible disposition.
 
 The output directory must not already exist. It contains:
 

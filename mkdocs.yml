@@ -157,6 +157,7 @@ nav:
           - HmsResults: api/hms_results.md
           - HmsResultsProducts: api/hms_results_products.md
           - HmsSpatialTransfer: api/hms_spatial_transfer.md
+          - HmsSubbasinTransfer: api/hms_subbasin_transfer.md
       - Geospatial:
           - HmsGeo: api/hms_geo.md
           - HmsSqlite: api/hms_sqlite.md

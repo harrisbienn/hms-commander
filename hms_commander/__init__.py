@@ -95,6 +95,7 @@ from .dss import HmsDss, HmsDssGrid, DssCore
 from .HmsResults import HmsResults
 from .HmsResultsProducts import HmsResultsProducts
 from .HmsSpatialTransfer import HmsSpatialTransfer
+from .HmsSubbasinTransfer import HmsSubbasinTransfer
 
 # Utilities
 from .HmsUtils import HmsUtils
@@ -167,6 +168,7 @@ __all__ = [
     "HmsResults",
     "HmsResultsProducts",
     "HmsSpatialTransfer",
+    "HmsSubbasinTransfer",
 
     # GIS Operations
     "HmsGeo",

@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 import subprocess
 import sys
@@ -24,6 +25,7 @@ from .HmsPrj import HmsPrj
 from .HmsResultsProducts import HmsResultsProducts
 from .HmsScenario import HmsRunArtifact, HmsScenario
 from .HmsSpatialTransfer import HmsSpatialTransfer
+from .HmsSubbasinTransfer import HmsSubbasinTransfer
 from .LoggingConfig import get_logger
 
 logger = get_logger(__name__)
@@ -208,62 +210,88 @@ class HmsScenarioWorker:
                 transfer_started = time.perf_counter()
                 transfer_config = request["spatial_transfer"]
                 try:
-                    result_hdf_candidates = sorted(
-                        (workspace.project_folder / "results").glob("RUN_*.h5")
-                    )
-                    if len(result_hdf_candidates) != 1:
-                        raise ValueError(
-                            "Expected one HMS result HDF for spatial transfer, "
-                            f"found {len(result_hdf_candidates)}"
-                        )
-                    basin_sqlite = (
-                        workspace.project_folder
-                        / transfer_config["basin_sqlite"]
-                    ).resolve()
-                    if (
-                        workspace.project_folder.resolve()
-                        not in basin_sqlite.parents
-                        or not basin_sqlite.is_file()
-                        or _sha256(basin_sqlite)
-                        != transfer_config["basin_sqlite_sha256"]
-                    ):
-                        raise ValueError(
-                            "Cloned HMS basin SQLite identity does not match"
-                        )
-                    source_grid = json.loads(
-                        Path(
-                            transfer_config["source_grid_definition"]
-                        ).read_text(encoding="utf-8")
-                    )
-                    target_grid = json.loads(
-                        Path(
-                            transfer_config["target_grid_definition"]
-                        ).read_text(encoding="utf-8")
-                    )
                     transfer_directory = product_directory / "spatial-transfer"
-                    transfer_manifest = HmsSpatialTransfer.export_excess_to_grid(
-                        result_hdf_candidates[0],
-                        basin_sqlite,
-                        workspace.precipitation_file,
-                        request["forcing"]["pathname"],
-                        source_grid,
-                        target_grid,
-                        transfer_directory / "ras-gridded-excess.dss",
-                        transfer_config["output_pathname"],
-                        model_start=_parse_model_time(model_window["start"]),
-                        model_end=_parse_model_time(model_window["end"]),
-                        model_interval_minutes=model_window["interval_minutes"],
-                        source_interval_minutes=transfer_config[
-                            "source_interval_minutes"
-                        ],
-                        excess_depth_units=transfer_config["excess_depth_units"],
-                        source_value_multiplier=transfer_config[
-                            "source_value_multiplier"
-                        ],
-                        fingerprint_tolerance=transfer_config[
-                            "fingerprint_tolerance"
-                        ],
-                    )
+                    if transfer_config.get("method") == HmsSubbasinTransfer.METHOD:
+                        transfer_map = json.loads(
+                            Path(transfer_config["transfer_map"]).read_text(
+                                encoding="utf-8"
+                            )
+                        )
+                        transfer_manifest = (
+                            HmsSubbasinTransfer.apply_transfer_map_to_dss(
+                                artifact.dss_file,
+                                transfer_map,
+                                transfer_directory / "ras-gridded-excess.dss",
+                                transfer_config["output_pathname"],
+                                source_a_part=transfer_config["source_a_part"],
+                                source_run_name=workspace.run_name,
+                                model_start=_parse_model_time(model_window["start"]),
+                                model_end=_parse_model_time(model_window["end"]),
+                                interval_minutes=model_window["interval_minutes"],
+                                source_depth_units=transfer_config[
+                                    "source_depth_units"
+                                ],
+                                volume_tolerance=transfer_config["volume_tolerance"],
+                                readback_absolute_value_tolerance=transfer_config[
+                                    "readback_absolute_value_tolerance"
+                                ],
+                            )
+                        )
+                    else:
+                        result_hdf_candidates = sorted(
+                            (workspace.project_folder / "results").glob("RUN_*.h5")
+                        )
+                        if len(result_hdf_candidates) != 1:
+                            raise ValueError(
+                                "Expected one HMS result HDF for spatial transfer, "
+                                f"found {len(result_hdf_candidates)}"
+                            )
+                        basin_sqlite = (
+                            workspace.project_folder / transfer_config["basin_sqlite"]
+                        ).resolve()
+                        if (
+                            workspace.project_folder.resolve()
+                            not in basin_sqlite.parents
+                            or not basin_sqlite.is_file()
+                            or _sha256(basin_sqlite)
+                            != transfer_config["basin_sqlite_sha256"]
+                        ):
+                            raise ValueError(
+                                "Cloned HMS basin SQLite identity does not match"
+                            )
+                        source_grid = json.loads(
+                            Path(transfer_config["source_grid_definition"]).read_text(
+                                encoding="utf-8"
+                            )
+                        )
+                        target_grid = json.loads(
+                            Path(transfer_config["target_grid_definition"]).read_text(
+                                encoding="utf-8"
+                            )
+                        )
+                        transfer_manifest = HmsSpatialTransfer.export_excess_to_grid(
+                            result_hdf_candidates[0],
+                            basin_sqlite,
+                            workspace.precipitation_file,
+                            request["forcing"]["pathname"],
+                            source_grid,
+                            target_grid,
+                            transfer_directory / "ras-gridded-excess.dss",
+                            transfer_config["output_pathname"],
+                            model_start=_parse_model_time(model_window["start"]),
+                            model_end=_parse_model_time(model_window["end"]),
+                            model_interval_minutes=model_window["interval_minutes"],
+                            source_interval_minutes=transfer_config[
+                                "source_interval_minutes"
+                            ],
+                            excess_depth_units=transfer_config["excess_depth_units"],
+                            source_value_multiplier=transfer_config[
+                                "source_value_multiplier"
+                            ],
+                            fingerprint_tolerance=transfer_config[
+                                "fingerprint_tolerance"
+                            ],
+                        )
                 except Exception as exc:
                     raise HmsScenarioWorkerError(
                         f"Spatial-transfer product export failed: {exc}",
@@ -272,9 +300,7 @@ class HmsScenarioWorker:
                         retryable=isinstance(exc, OSError),
                     ) from exc
                 finally:
-                    timings["spatial_transfer_seconds"] = _elapsed(
-                        transfer_started
-                    )
+                    timings["spatial_transfer_seconds"] = _elapsed(transfer_started)
                 transfer_manifest_path = transfer_directory / (
                     "ras-gridded-excess.manifest.json"
                 )
@@ -289,12 +315,19 @@ class HmsScenarioWorker:
                     "audit": _file_identity(
                         transfer_directory / "ras-gridded-excess.audit.json"
                     ),
-                    "metrics": transfer_manifest["metrics"],
                     "pathname_selector": transfer_manifest["output"][
                         "pathname_selector"
                     ],
                     "record_count": transfer_manifest["output"]["record_count"],
                 }
+                evidence_key = (
+                    "volume"
+                    if transfer_manifest["schema"] == HmsSubbasinTransfer.PRODUCT_SCHEMA
+                    else "metrics"
+                )
+                products["spatial_transfer"][evidence_key] = transfer_manifest[
+                    evidence_key
+                ]
 
             result = HmsScenarioWorker._result_payload(
                 request=request,
@@ -559,125 +592,15 @@ class HmsScenarioWorker:
         normalized_transfer = None
         if payload.get("spatial_transfer") is not None:
             transfer = _object(payload["spatial_transfer"], "spatial_transfer")
-            _require_keys(
-                transfer,
-                required={
-                    "basin_sqlite",
-                    "basin_sqlite_sha256",
-                    "source_grid_definition",
-                    "source_grid_definition_sha256",
-                    "target_grid_definition",
-                    "target_grid_definition_sha256",
-                    "output_pathname",
-                    "source_interval_minutes",
-                    "source_value_multiplier",
-                    "fingerprint_tolerance",
-                    "excess_depth_units",
-                    "status",
-                    "forecast_eligible",
-                },
-                optional=set(),
-                label="spatial_transfer",
-            )
-            basin_relative = Path(
-                _nonempty_string(
-                    transfer["basin_sqlite"],
-                    "spatial_transfer.basin_sqlite",
+            if transfer.get("method") == HmsSubbasinTransfer.METHOD:
+                normalized_transfer = HmsScenarioWorker._subbasin_transfer_request(
+                    transfer
                 )
-            )
-            if basin_relative.is_absolute() or ".." in basin_relative.parts:
-                raise HmsScenarioWorkerError(
-                    "spatial_transfer.basin_sqlite must be a portable project path",
-                    classification="invalid_request",
-                    exit_code=2,
+            else:
+                normalized_transfer = HmsScenarioWorker._nearest_cell_transfer_request(
+                    transfer,
+                    model_interval=interval,
                 )
-            source_interval = _positive_int(
-                transfer["source_interval_minutes"],
-                "spatial_transfer.source_interval_minutes",
-            )
-            if source_interval % interval:
-                raise HmsScenarioWorkerError(
-                    "spatial transfer source interval must be a "
-                    "model-interval multiple",
-                    classification="invalid_request",
-                    exit_code=2,
-                )
-            multiplier = transfer["source_value_multiplier"]
-            tolerance = transfer["fingerprint_tolerance"]
-            if (
-                isinstance(multiplier, bool)
-                or not isinstance(multiplier, (int, float))
-                or float(multiplier) <= 0
-                or isinstance(tolerance, bool)
-                or not isinstance(tolerance, (int, float))
-                or float(tolerance) < 0
-            ):
-                raise HmsScenarioWorkerError(
-                    "spatial transfer multiplier/tolerance values are invalid",
-                    classification="invalid_request",
-                    exit_code=2,
-                )
-            units = _nonempty_string(
-                transfer["excess_depth_units"],
-                "spatial_transfer.excess_depth_units",
-            ).upper()
-            if units not in {"IN", "MM"}:
-                raise HmsScenarioWorkerError(
-                    "spatial_transfer.excess_depth_units must be IN or MM",
-                    classification="invalid_request",
-                    exit_code=2,
-                )
-            if (
-                transfer["status"] != "qualification_only"
-                or transfer["forecast_eligible"] is not False
-            ):
-                raise HmsScenarioWorkerError(
-                    "spatial transfer must remain qualification_only and "
-                    "forecast-ineligible",
-                    classification="invalid_request",
-                    exit_code=2,
-                )
-            normalized_transfer = {
-                "basin_sqlite": basin_relative.as_posix(),
-                "basin_sqlite_sha256": _sha256_string(
-                    transfer["basin_sqlite_sha256"],
-                    "spatial_transfer.basin_sqlite_sha256",
-                ),
-                "source_grid_definition": str(
-                    Path(
-                        _nonempty_string(
-                            transfer["source_grid_definition"],
-                            "spatial_transfer.source_grid_definition",
-                        )
-                    ).resolve()
-                ),
-                "source_grid_definition_sha256": _sha256_string(
-                    transfer["source_grid_definition_sha256"],
-                    "spatial_transfer.source_grid_definition_sha256",
-                ),
-                "target_grid_definition": str(
-                    Path(
-                        _nonempty_string(
-                            transfer["target_grid_definition"],
-                            "spatial_transfer.target_grid_definition",
-                        )
-                    ).resolve()
-                ),
-                "target_grid_definition_sha256": _sha256_string(
-                    transfer["target_grid_definition_sha256"],
-                    "spatial_transfer.target_grid_definition_sha256",
-                ),
-                "output_pathname": _nonempty_string(
-                    transfer["output_pathname"],
-                    "spatial_transfer.output_pathname",
-                ),
-                "source_interval_minutes": source_interval,
-                "source_value_multiplier": float(multiplier),
-                "fingerprint_tolerance": float(tolerance),
-                "excess_depth_units": units,
-                "status": "qualification_only",
-                "forecast_eligible": False,
-            }
 
         products = _object(payload["products"], "products")
         _require_keys(
@@ -813,6 +736,200 @@ class HmsScenarioWorker:
         return normalized_request
 
     @staticmethod
+    def _nearest_cell_transfer_request(
+        transfer: Mapping[str, Any],
+        *,
+        model_interval: int,
+    ) -> Dict[str, Any]:
+        """Normalize the backward-compatible nearest-cell request variant."""
+        _require_keys(
+            transfer,
+            required={
+                "basin_sqlite",
+                "basin_sqlite_sha256",
+                "source_grid_definition",
+                "source_grid_definition_sha256",
+                "target_grid_definition",
+                "target_grid_definition_sha256",
+                "output_pathname",
+                "source_interval_minutes",
+                "source_value_multiplier",
+                "fingerprint_tolerance",
+                "excess_depth_units",
+                "status",
+                "forecast_eligible",
+            },
+            optional=set(),
+            label="spatial_transfer",
+        )
+        _require_qualification_only(transfer)
+        basin_relative = Path(
+            _nonempty_string(
+                transfer["basin_sqlite"],
+                "spatial_transfer.basin_sqlite",
+            )
+        )
+        if basin_relative.is_absolute() or ".." in basin_relative.parts:
+            raise HmsScenarioWorkerError(
+                "spatial_transfer.basin_sqlite must be a portable project path",
+                classification="invalid_request",
+                exit_code=2,
+            )
+        source_interval = _positive_int(
+            transfer["source_interval_minutes"],
+            "spatial_transfer.source_interval_minutes",
+        )
+        if source_interval % model_interval:
+            raise HmsScenarioWorkerError(
+                "spatial transfer source interval must be a model-interval multiple",
+                classification="invalid_request",
+                exit_code=2,
+            )
+        multiplier = _finite_number(
+            transfer["source_value_multiplier"],
+            "spatial_transfer.source_value_multiplier",
+            positive=True,
+        )
+        tolerance = _finite_number(
+            transfer["fingerprint_tolerance"],
+            "spatial_transfer.fingerprint_tolerance",
+            positive=False,
+        )
+        units = _depth_units(
+            transfer["excess_depth_units"],
+            "spatial_transfer.excess_depth_units",
+        )
+        return {
+            "basin_sqlite": basin_relative.as_posix(),
+            "basin_sqlite_sha256": _sha256_string(
+                transfer["basin_sqlite_sha256"],
+                "spatial_transfer.basin_sqlite_sha256",
+            ),
+            "source_grid_definition": str(
+                Path(
+                    _nonempty_string(
+                        transfer["source_grid_definition"],
+                        "spatial_transfer.source_grid_definition",
+                    )
+                ).resolve()
+            ),
+            "source_grid_definition_sha256": _sha256_string(
+                transfer["source_grid_definition_sha256"],
+                "spatial_transfer.source_grid_definition_sha256",
+            ),
+            "target_grid_definition": str(
+                Path(
+                    _nonempty_string(
+                        transfer["target_grid_definition"],
+                        "spatial_transfer.target_grid_definition",
+                    )
+                ).resolve()
+            ),
+            "target_grid_definition_sha256": _sha256_string(
+                transfer["target_grid_definition_sha256"],
+                "spatial_transfer.target_grid_definition_sha256",
+            ),
+            "output_pathname": _nonempty_string(
+                transfer["output_pathname"],
+                "spatial_transfer.output_pathname",
+            ),
+            "source_interval_minutes": source_interval,
+            "source_value_multiplier": multiplier,
+            "fingerprint_tolerance": tolerance,
+            "excess_depth_units": units,
+            "status": "qualification_only",
+            "forecast_eligible": False,
+        }
+
+    @staticmethod
+    def _subbasin_transfer_request(transfer: Mapping[str, Any]) -> Dict[str, Any]:
+        """Normalize the volume-conserving subbasin request variant."""
+        _require_keys(
+            transfer,
+            required={
+                "method",
+                "transfer_map",
+                "transfer_map_sha256",
+                "output_pathname",
+                "source_a_part",
+                "source_depth_units",
+                "volume_tolerance",
+                "readback_absolute_value_tolerance",
+                "status",
+                "forecast_eligible",
+            },
+            optional=set(),
+            label="spatial_transfer",
+        )
+        _require_qualification_only(transfer)
+        if transfer["method"] != HmsSubbasinTransfer.METHOD:
+            raise HmsScenarioWorkerError(
+                "spatial_transfer.method is unsupported",
+                classification="invalid_request",
+                exit_code=2,
+            )
+        source_a_part = transfer["source_a_part"]
+        if not isinstance(source_a_part, str):
+            raise HmsScenarioWorkerError(
+                "spatial_transfer.source_a_part must be a string, including blank",
+                classification="invalid_request",
+                exit_code=2,
+            )
+        tolerance = _object(
+            transfer["volume_tolerance"],
+            "spatial_transfer.volume_tolerance",
+        )
+        _require_keys(
+            tolerance,
+            required={"absolute_cubic_meters", "relative_fraction"},
+            optional=set(),
+            label="spatial_transfer.volume_tolerance",
+        )
+        return {
+            "method": HmsSubbasinTransfer.METHOD,
+            "transfer_map": str(
+                Path(
+                    _nonempty_string(
+                        transfer["transfer_map"],
+                        "spatial_transfer.transfer_map",
+                    )
+                ).resolve()
+            ),
+            "transfer_map_sha256": _sha256_string(
+                transfer["transfer_map_sha256"],
+                "spatial_transfer.transfer_map_sha256",
+            ),
+            "output_pathname": _nonempty_string(
+                transfer["output_pathname"],
+                "spatial_transfer.output_pathname",
+            ),
+            "source_a_part": source_a_part.strip(),
+            "source_depth_units": _depth_units(
+                transfer["source_depth_units"],
+                "spatial_transfer.source_depth_units",
+            ),
+            "volume_tolerance": {
+                "absolute_cubic_meters": _finite_number(
+                    tolerance["absolute_cubic_meters"],
+                    "spatial_transfer.volume_tolerance.absolute_cubic_meters",
+                    positive=False,
+                ),
+                "relative_fraction": _finite_number(
+                    tolerance["relative_fraction"],
+                    "spatial_transfer.volume_tolerance.relative_fraction",
+                    positive=False,
+                ),
+            },
+            "readback_absolute_value_tolerance": _finite_number(
+                transfer["readback_absolute_value_tolerance"],
+                "spatial_transfer.readback_absolute_value_tolerance",
+                positive=False,
+            ),
+            "status": "qualification_only",
+            "forecast_eligible": False,
+        }
+
+    @staticmethod
     def _verify_input_identities(request: Mapping[str, Any]) -> None:
         forcing = Path(request["forcing"]["dss"])
         if not forcing.is_file():
@@ -851,25 +968,34 @@ class HmsScenarioWorker:
 
         transfer = request.get("spatial_transfer")
         if transfer is not None:
-            project = Path(request["source_model"]["project"])
-            project_folder = project.parent if project.is_file() else project
-            transfer_inputs = (
-                (
-                    project_folder / transfer["basin_sqlite"],
-                    transfer["basin_sqlite_sha256"],
-                    "HMS basin SQLite",
-                ),
-                (
-                    Path(transfer["source_grid_definition"]),
-                    transfer["source_grid_definition_sha256"],
-                    "source grid definition",
-                ),
-                (
-                    Path(transfer["target_grid_definition"]),
-                    transfer["target_grid_definition_sha256"],
-                    "target grid definition",
-                ),
-            )
+            if transfer.get("method") == HmsSubbasinTransfer.METHOD:
+                transfer_inputs = (
+                    (
+                        Path(transfer["transfer_map"]),
+                        transfer["transfer_map_sha256"],
+                        "subbasin volume transfer map",
+                    ),
+                )
+            else:
+                project = Path(request["source_model"]["project"])
+                project_folder = project.parent if project.is_file() else project
+                transfer_inputs = (
+                    (
+                        project_folder / transfer["basin_sqlite"],
+                        transfer["basin_sqlite_sha256"],
+                        "HMS basin SQLite",
+                    ),
+                    (
+                        Path(transfer["source_grid_definition"]),
+                        transfer["source_grid_definition_sha256"],
+                        "source grid definition",
+                    ),
+                    (
+                        Path(transfer["target_grid_definition"]),
+                        transfer["target_grid_definition_sha256"],
+                        "target grid definition",
+                    ),
+                )
             for path, expected, label in transfer_inputs:
                 resolved = path.resolve()
                 if not resolved.is_file() or _sha256(resolved) != expected:
@@ -1149,6 +1275,51 @@ def _positive_int(value: Any, label: str) -> int:
             exit_code=2,
         )
     return value
+
+
+def _finite_number(value: Any, label: str, *, positive: bool) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise HmsScenarioWorkerError(
+            f"{label} must be numeric",
+            classification="invalid_request",
+            exit_code=2,
+        )
+    normalized = float(value)
+    if (
+        not math.isfinite(normalized)
+        or normalized < 0
+        or (positive and normalized == 0)
+    ):
+        qualifier = "positive" if positive else "nonnegative"
+        raise HmsScenarioWorkerError(
+            f"{label} must be finite and {qualifier}",
+            classification="invalid_request",
+            exit_code=2,
+        )
+    return normalized
+
+
+def _depth_units(value: Any, label: str) -> str:
+    units = _nonempty_string(value, label).upper()
+    if units not in {"IN", "MM"}:
+        raise HmsScenarioWorkerError(
+            f"{label} must be IN or MM",
+            classification="invalid_request",
+            exit_code=2,
+        )
+    return units
+
+
+def _require_qualification_only(transfer: Mapping[str, Any]) -> None:
+    if (
+        transfer["status"] != "qualification_only"
+        or transfer["forecast_eligible"] is not False
+    ):
+        raise HmsScenarioWorkerError(
+            "spatial transfer must remain qualification_only and forecast-ineligible",
+            classification="invalid_request",
+            exit_code=2,
+        )
 
 
 def _parse_model_time(value: Any) -> datetime:
