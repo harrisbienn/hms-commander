@@ -237,6 +237,52 @@ and qualification-only disposition. The worker result exposes the product
 manifest, DSS, audit, metrics, selector, and record count for downstream
 orchestration without reopening the HMS result HDF.
 
+## Compile a subbasin-volume transfer map
+
+`HmsSubbasinTransfer` implements the static-map portion of
+`hms-subbasin-volume-conserving-v1`. It is an additional method, not a
+replacement for `nearest-active-hms-cell`.
+
+The compiler consumes explicit HMS source areas and units, selected subbasin
+polygons, and a RAS Commander `precipitation-application-area` artifact. It
+assigns each positive-area target cell by its center point, then calculates:
+
+```text
+depth multiplier = HMS source area / assigned effective RAS receiving area
+```
+
+This guarantees that a uniform source depth produces the same per-subbasin
+volume after transfer. Partial edge cells use the effective area authenticated
+from the exact RAS mesh; unassigned or outside-support cells have a zero
+multiplier.
+
+```python
+from hms_commander import HmsSubbasinTransfer
+
+transfer_map = HmsSubbasinTransfer.compile_transfer_map(
+    subbasin_geodataframe,
+    ras_application_area,
+    ["Subbasin A", "Subbasin B"],
+    {
+        "project_id": "accepted-hms-project",
+        "basin_model_id": "single-plan-basin",
+        "basin_file": basin_file_identity,
+        "geometry_source": geometry_file_identity,
+    },
+)
+HmsSubbasinTransfer.write_transfer_map(
+    transfer_map,
+    "products/subbasin-volume-transfer-map.json",
+)
+```
+
+Compilation rejects implicit or unsupported area units, missing selected
+subbasins, positive-area polygon overlap, ambiguous center assignments,
+subbasins without RAS receiving support, changed application-area identities,
+and inconsistent denominators. DSS series selection, interval-end time
+alignment, precipitation-grid writing, and volume-residual evidence belong to
+the runtime application stage and are not performed by this compiler.
+
 The audit deliberately does not apply engineering thresholds or declare the
 transfer acceptable for forecasting. Those decisions belong to the consuming
 study's versioned qualification policy.

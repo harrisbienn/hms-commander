@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "hms-commander/subbasin-volume-transfer-map/1.0",
+  "title": "HMS Commander subbasin volume transfer map 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "method",
+    "algorithm",
+    "hms_model",
+    "source_subbasin_crs",
+    "source_subbasin_geometry_sha256",
+    "ras_application_area",
+    "target_grid",
+    "assignment_predicate",
+    "outside_support_behavior",
+    "area_precision_decimal_places",
+    "compiler",
+    "subbasins",
+    "cells",
+    "metrics",
+    "transfer_map_sha256"
+  ],
+  "properties": {
+    "schema": {"const": "hms-commander/subbasin-volume-transfer-map/1.0"},
+    "method": {"const": "hms-subbasin-volume-conserving-v1"},
+    "algorithm": {
+      "const": "target-center-subbasin-coverage-effective-area-scaling-v1"
+    },
+    "hms_model": {"$ref": "#/$defs/hmsModel"},
+    "source_subbasin_crs": {"type": "string", "minLength": 1},
+    "source_subbasin_geometry_sha256": {"$ref": "#/$defs/sha256"},
+    "ras_application_area": {"$ref": "#/$defs/rasApplicationArea"},
+    "target_grid": {"$ref": "#/$defs/grid"},
+    "assignment_predicate": {
+      "const": "subbasin-covers-target-cell-center"
+    },
+    "outside_support_behavior": {"const": "zero"},
+    "area_precision_decimal_places": {"const": 9},
+    "compiler": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shapely_version", "geos_version"],
+      "properties": {
+        "shapely_version": {"type": "string", "minLength": 1},
+        "geos_version": {"type": "string", "minLength": 1}
+      }
+    },
+    "subbasins": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/subbasin"}
+    },
+    "cells": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/cell"}
+    },
+    "metrics": {"$ref": "#/$defs/metrics"},
+    "transfer_map_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "fileIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "size_bytes", "sha256"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "pattern": "^[^/\\\\]+$"},
+        "size_bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "hmsModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_id",
+        "basin_model_id",
+        "basin_file",
+        "geometry_source"
+      ],
+      "properties": {
+        "project_id": {"type": "string", "minLength": 1},
+        "basin_model_id": {"type": "string", "minLength": 1},
+        "basin_file": {"$ref": "#/$defs/fileIdentity"},
+        "geometry_source": {"$ref": "#/$defs/fileIdentity"}
+      }
+    },
+    "rasApplicationArea": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "method", "application_area_sha256", "model"],
+      "properties": {
+        "schema": {"const": "ras-commander/precipitation-application-area/1.0"},
+        "method": {"const": "ras-mesh-effective-area"},
+        "application_area_sha256": {"$ref": "#/$defs/sha256"},
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["project_id", "plan_id", "geometry_id", "two_d_flow_area"],
+          "properties": {
+            "project_id": {"type": "string", "minLength": 1},
+            "plan_id": {"type": "string", "minLength": 1},
+            "geometry_id": {"type": "string", "minLength": 1},
+            "two_d_flow_area": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    },
+    "grid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "definition_id",
+        "crs",
+        "shape",
+        "cell_size_meters",
+        "cell_area_square_meters",
+        "origin",
+        "row_order",
+        "definition_sha256"
+      ],
+      "properties": {
+        "definition_id": {"type": "string", "minLength": 1},
+        "crs": {"type": "string", "minLength": 1},
+        "shape": {
+          "type": "array",
+          "prefixItems": [
+            {"type": "integer", "minimum": 1},
+            {"type": "integer", "minimum": 1}
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "cell_size_meters": {"type": "number", "exclusiveMinimum": 0},
+        "cell_area_square_meters": {"type": "number", "exclusiveMinimum": 0},
+        "origin": {
+          "type": "array",
+          "prefixItems": [{"type": "number"}, {"type": "number"}],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "row_order": {"const": "south_to_north"},
+        "definition_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "sourceArea": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["declared_value", "declared_units", "square_meters"],
+      "properties": {
+        "declared_value": {"type": "number", "exclusiveMinimum": 0},
+        "declared_units": {
+          "enum": [
+            "SQUARE_METERS",
+            "SQUARE_KILOMETERS",
+            "ACRES",
+            "SQUARE_MILES"
+          ]
+        },
+        "square_meters": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "subbasin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subbasin",
+        "source_area",
+        "assigned_cell_count",
+        "receiving_area_square_meters",
+        "depth_multiplier"
+      ],
+      "properties": {
+        "subbasin": {"type": "string", "minLength": 1},
+        "source_area": {"$ref": "#/$defs/sourceArea"},
+        "assigned_cell_count": {"type": "integer", "minimum": 1},
+        "receiving_area_square_meters": {"type": "number", "exclusiveMinimum": 0},
+        "depth_multiplier": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cell_id",
+        "row_index",
+        "column_index",
+        "subbasin",
+        "effective_area_square_meters",
+        "depth_multiplier"
+      ],
+      "properties": {
+        "cell_id": {"type": "integer", "minimum": 0},
+        "row_index": {"type": "integer", "minimum": 0},
+        "column_index": {"type": "integer", "minimum": 0},
+        "subbasin": {"type": ["string", "null"]},
+        "effective_area_square_meters": {"type": "number", "minimum": 0},
+        "depth_multiplier": {"type": "number", "minimum": 0}
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selected_subbasin_count",
+        "target_cell_count",
+        "assigned_target_cell_count",
+        "unassigned_positive_area_cell_count",
+        "source_area_square_meters",
+        "assigned_receiving_area_square_meters",
+        "unassigned_positive_area_square_meters"
+      ],
+      "properties": {
+        "selected_subbasin_count": {"type": "integer", "minimum": 1},
+        "target_cell_count": {"type": "integer", "minimum": 1},
+        "assigned_target_cell_count": {"type": "integer", "minimum": 1},
+        "unassigned_positive_area_cell_count": {"type": "integer", "minimum": 0},
+        "source_area_square_meters": {"type": "number", "exclusiveMinimum": 0},
+        "assigned_receiving_area_square_meters": {"type": "number", "exclusiveMinimum": 0},
+        "unassigned_positive_area_square_meters": {"type": "number", "minimum": 0}
+      }
+    }
+  }
+}
