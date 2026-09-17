@@ -86,9 +86,7 @@ def test_audit_reports_support_distance_area_and_volume(audit_inputs):
 
     assert audit["schema"] == "hms-commander/spatial-transfer-audit/1.0"
     assert audit["method"] == "nearest-active-hms-cell"
-    assert audit["algorithm"] == (
-        "polygon-containment-then-nearest-active-centroid"
-    )
+    assert audit["algorithm"] == ("polygon-containment-then-nearest-active-centroid")
     assert len(audit["audit_sha256"]) == 64
     assert audit["source_grid"]["definition_sha256"]
     assert audit["target_grid"]["definition_sha256"]
@@ -114,15 +112,11 @@ def test_audit_reports_support_distance_area_and_volume(audit_inputs):
     volume = metrics["volume_effect"]
     assert volume["baseline"] == "outside-support-zero"
     assert volume["comparison"] == "nearest-active-hms-cell"
-    assert volume["cubic_meters"]["direct_supported"] == pytest.approx(
-        6.0 * 0.0254
-    )
+    assert volume["cubic_meters"]["direct_supported"] == pytest.approx(6.0 * 0.0254)
     assert volume["cubic_meters"]["nearest_filled_assigned"] == pytest.approx(
         6.0 * 0.0254
     )
-    assert volume["incremental_percent_of_comparison_total"] == pytest.approx(
-        50.0
-    )
+    assert volume["incremental_percent_of_comparison_total"] == pytest.approx(50.0)
 
 
 def test_audit_is_deterministic_and_writer_reuses_identical_content(
@@ -138,9 +132,7 @@ def test_audit_is_deterministic_and_writer_reuses_identical_content(
         _grid("target-grid"),
     )
 
-    first = HmsSpatialTransfer.audit_excess_to_grid(
-        *arguments, excess_depth_units="IN"
-    )
+    first = HmsSpatialTransfer.audit_excess_to_grid(*arguments, excess_depth_units="IN")
     second = HmsSpatialTransfer.audit_excess_to_grid(
         *arguments, excess_depth_units="IN"
     )
@@ -486,9 +478,7 @@ def test_export_excess_grid_writes_identity_bound_product(
     assert manifest["status"] == "qualification_only"
     assert manifest["forecast_eligible"] is False
     assert manifest["method"] == "nearest-active-hms-cell"
-    assert manifest["algorithm"] == (
-        "polygon-containment-then-nearest-active-centroid"
-    )
+    assert manifest["algorithm"] == ("polygon-containment-then-nearest-active-centroid")
     assert manifest["output"]["record_count"] == 2
     assert output.with_suffix(".audit.json").is_file()
     assert output.with_suffix(".manifest.json").is_file()
