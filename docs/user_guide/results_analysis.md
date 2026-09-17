@@ -175,6 +175,12 @@ API reads the HMS result HDF and basin SQLite, resolves result columns to
 computation cells, and reports raw support, nearest-fill distance, area, and
 volume-effect metrics.
 
+The product's stable transfer-method identifier is
+`nearest-active-hms-cell`. Its audit records the more precise implementation
+label `polygon-containment-then-nearest-active-centroid` separately as
+`algorithm`. Consumers select behavior by `method`; the algorithm label
+preserves diagnostic detail without creating a second public method name.
+
 `excess_depth_units` must match the incremental-excess dataset's HDF `units`
 attribute; the audit rejects a mismatch before calculating volume.
 

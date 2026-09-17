@@ -85,6 +85,10 @@ def test_audit_reports_support_distance_area_and_volume(audit_inputs):
     )
 
     assert audit["schema"] == "hms-commander/spatial-transfer-audit/1.0"
+    assert audit["method"] == "nearest-active-hms-cell"
+    assert audit["algorithm"] == (
+        "polygon-containment-then-nearest-active-centroid"
+    )
     assert len(audit["audit_sha256"]) == 64
     assert audit["source_grid"]["definition_sha256"]
     assert audit["target_grid"]["definition_sha256"]
@@ -481,6 +485,10 @@ def test_export_excess_grid_writes_identity_bound_product(
     assert manifest["schema"] == "hms-commander/gridded-excess-product/1.0"
     assert manifest["status"] == "qualification_only"
     assert manifest["forecast_eligible"] is False
+    assert manifest["method"] == "nearest-active-hms-cell"
+    assert manifest["algorithm"] == (
+        "polygon-containment-then-nearest-active-centroid"
+    )
     assert manifest["output"]["record_count"] == 2
     assert output.with_suffix(".audit.json").is_file()
     assert output.with_suffix(".manifest.json").is_file()

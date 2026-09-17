@@ -318,6 +318,9 @@ class HmsSpatialTransfer:
     """Static namespace for deterministic HMS grid-transfer evidence."""
 
     SCHEMA = "hms-commander/spatial-transfer-audit/1.0"
+    PRODUCT_SCHEMA = "hms-commander/gridded-excess-product/1.0"
+    METHOD = "nearest-active-hms-cell"
+    ALGORITHM = "polygon-containment-then-nearest-active-centroid"
 
     @staticmethod
     def _transfer_excess_to_grid(
@@ -643,7 +646,8 @@ class HmsSpatialTransfer:
         cell_area = target_grid["cell_area_square_meters"]
         report: dict[str, Any] = {
             "schema": HmsSpatialTransfer.SCHEMA,
-            "method": "polygon-containment-then-nearest-active-centroid",
+            "method": HmsSpatialTransfer.METHOD,
+            "algorithm": HmsSpatialTransfer.ALGORITHM,
             "source_identity": {
                 "hms_result_hdf_sha256": _sha256_file(hdf_path),
                 "hms_basin_sqlite_sha256": _sha256_file(sqlite_path),
@@ -933,10 +937,11 @@ class HmsSpatialTransfer:
             raise RuntimeError("RAS-grid excess DSS write did not produce every frame")
         HmsSpatialTransfer.write_audit(audit, audit_path)
         manifest: dict[str, Any] = {
-            "schema": "hms-commander/gridded-excess-product/1.0",
+            "schema": HmsSpatialTransfer.PRODUCT_SCHEMA,
             "status": "qualification_only",
             "forecast_eligible": False,
-            "method": audit["method"],
+            "method": HmsSpatialTransfer.METHOD,
+            "algorithm": audit["algorithm"],
             "source": source_evidence,
             "hms_result_hdf": {
                 "path": str(Path(hms_result_hdf).resolve()),
