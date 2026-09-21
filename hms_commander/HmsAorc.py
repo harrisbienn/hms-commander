@@ -772,13 +772,13 @@ class HmsAorc:
             - resolution: Spatial and temporal resolution
             - variables: Available variables
 
-        Examples
-        --------
-        >>> from hms_commander import HmsAorc
-        >>>
-        >>> info = HmsAorc.get_info()
-        >>> print(info['resolution']['spatial'])
-        '30 arc-seconds (~800 meters)'
+        Example:
+            ```python
+            from hms_commander import HmsAorc
+
+            info = HmsAorc.get_info()
+            print(info['resolution']['spatial'])
+            ```
         """
         return {
             'name': 'Analysis of Record for Calibration (AORC)',

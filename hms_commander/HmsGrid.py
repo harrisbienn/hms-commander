@@ -742,6 +742,7 @@ End:
                     - last_modified: Last modification datetime
 
         Example:
+            ```python
             >>> from hms_commander import HmsGrid
             >>>
             >>> # Read grid metadata
@@ -750,6 +751,7 @@ End:
             'AORC_Grid_1'
             >>> print(info['grids'][0]['pathname'])
             '/AORC/GRID/PRECIP////'
+            ```
         """
         grid_path = Path(grid_file)
         if not grid_path.exists():

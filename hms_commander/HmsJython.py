@@ -749,7 +749,7 @@ import sys
             run_name: Name of the simulation run to execute
             output_dss: Optional custom output DSS file path
             save_project: Whether to save project after computation
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
             python2_compatible: If True, generate Python 2 syntax for HMS 3.x
 
         Returns:
@@ -917,7 +917,7 @@ JythonHms.Exit(0)
             project_path: Path to the HEC-HMS project folder
             run_names: List of simulation run names to execute
             save_after_each: Whether to save project after each run
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Jython script content as string
@@ -999,7 +999,7 @@ except Exception as e:
             modifications: Dictionary mapping element names to parameter changes
                 Example: {"Subbasin-1": {"CurveNumber": 75, "InitialAbstraction": 0.5}}
             run_name: Optional run to execute after modifications
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Jython script content as string
@@ -1120,7 +1120,7 @@ except Exception as e:
             parameters: Dictionary mapping element names to parameter changes.
                 Example: {"Subbasin-1": {"CurveNumber": 75, "Lag": 30}}
             basin_name: Name of basin model (auto-detected if None)
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Jython script content as string

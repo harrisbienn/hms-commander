@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Unit (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python: ['3.10', '3.11', '3.12']
+        include:
+          - os: windows-latest
+            python: '3.12'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install pip==26.2.1
+      - run: python -m pip install . pytest==9.1.1
+      - name: Run deterministic tests without HEC, Java, GIS, or external services
+        run: >-
+          python -I -m pytest
+          tests/test_constants.py tests/test_parsing.py tests/test_jython_script_security.py
+          tests/test_hms_examples.py tests/test_scenario.py tests/test_scenario_worker.py
+          tests/test_timeseries_worker.py tests/test_handoff_worker.py
+          tests/test_results_products.py
+          -m "not requires_hms and not local_hms and not requires_java and not requires_gis and not requires_network and not slow"
+      - run: python -m pip freeze --all
+  docs:
+    name: Strict documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pip==26.2.1
+      - run: python -m pip install '.[docs]' -c docs/constraints-docs.txt
+      - run: python .github/scripts/prepare_docs.py
+      - run: python -m mkdocs build --strict
+      - run: python -m pip freeze --all

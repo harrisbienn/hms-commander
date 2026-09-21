@@ -49,7 +49,7 @@ class HmsControl:
         Get all control specifications from the HMS project.
 
         Args:
-            hms_object: HmsPrj instance (uses global hms if None)
+            hms_object (HmsPrj, optional): HmsPrj instance (uses global hms if None)
 
         Returns:
             DataFrame with control specification information
@@ -73,7 +73,7 @@ class HmsControl:
 
         Args:
             control_path: Path to the .control file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Dictionary with 'start_date' and 'end_date' as datetime objects
@@ -130,7 +130,7 @@ class HmsControl:
             control_path: Path to the .control file
             start_date: Simulation start date/time
             end_date: Simulation end date/time
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             True if successful
@@ -175,7 +175,7 @@ class HmsControl:
 
         Args:
             control_path: Path to the .control file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Time interval string (e.g., "15 Minutes", "1 Hour")
@@ -205,7 +205,7 @@ class HmsControl:
             control_path: Path to the .control file
             interval: Time interval - can be string (e.g., "15 Minutes") or
                      integer minutes (e.g., 15)
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             True if successful
@@ -244,7 +244,7 @@ class HmsControl:
 
         Args:
             control_path: Path to the .control file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Dictionary with all control parameters
@@ -274,7 +274,7 @@ class HmsControl:
         Args:
             template_control: Name or path of the template control file
             new_name: Name for the new control specification
-            hms_object: Optional HmsPrj instance. If omitted, uses the global
+            hms_object (HmsPrj, optional): Optional HmsPrj instance. If omitted, uses the global
                 hms object when it is initialized.
 
         Returns:
@@ -360,7 +360,7 @@ class HmsControl:
             start_date: Simulation start date/time
             end_date: Simulation end date/time
             time_interval: Time interval (string or minutes)
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Path to the new control file
