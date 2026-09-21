@@ -33,8 +33,15 @@ Example (HMS 3.x):
     success, stdout, stderr = HmsJython.execute_script(script, hms_3x_path)
 
 All methods are static and designed to be used without instantiation.
+
+Generated names and paths are encoded as Unicode string literals, including in
+legacy scripts; quotes and backslashes remain data. Names must be non-empty
+strings without NUL characters. Parameter dictionaries accept built-in literal
+data (strings, finite numbers, booleans, None, lists, tuples, and dictionaries),
+not objects whose repr could introduce executable source.
 """
 
+import math
 import os
 import subprocess
 import tempfile
@@ -47,6 +54,63 @@ from .Decorators import log_call
 from ._constants import DEFAULT_EXECUTION_TIMEOUT
 
 logger = get_logger(__name__)
+
+
+def _jython_literal(value: Any) -> str:
+    """Encode built-in data as ASCII source understood by both Jython branches.
+
+    Never interpolate arbitrary object reprs: they can contain executable source.
+    Unicode literals preserve non-ASCII names even in legacy Python 2 scripts.
+    """
+    if type(value) is str:
+        return "u" + ascii(value)
+    if value is None or type(value) in (bool, int):
+        return repr(value)
+    if type(value) is float:
+        if not math.isfinite(value):
+            raise ValueError("Jython parameter numbers must be finite")
+        return repr(value)
+    if type(value) is list:
+        return "[" + ", ".join(_jython_literal(item) for item in value) + "]"
+    if type(value) is tuple:
+        if not value:
+            return "()"
+        return "(" + ", ".join(_jython_literal(item) for item in value) + ",)"
+    if type(value) is dict:
+        return "{" + ", ".join(
+            f"{_jython_literal(key)}: {_jython_literal(item)}"
+            for key, item in value.items()
+        ) + "}"
+    raise TypeError("Jython parameters must contain only built-in literal data")
+
+
+def _jython_name(value: str, name: str) -> str:
+    """Validate an HMS name/path without stripping or rewriting its contents."""
+    if type(value) is not str:
+        raise TypeError(f"{name} must be a string")
+    if not value.strip() or "\x00" in value:
+        raise ValueError(f"{name} must be non-empty and contain no NUL characters")
+    return _jython_literal(value)
+
+
+def _jython_run_names(run_names: List[str]) -> str:
+    """Encode each batch name instead of trusting the container's repr."""
+    if type(run_names) not in (list, tuple):
+        raise TypeError("run_names must be a list or tuple of strings")
+    return "[" + ", ".join(_jython_name(name, "run_name") for name in run_names) + "]"
+
+
+def _jython_parameters(parameters: Dict[str, Dict[str, Any]]) -> str:
+    """Validate element/parameter names and encode their literal values."""
+    if type(parameters) is not dict:
+        raise TypeError("parameters must be a dictionary of element parameter dictionaries")
+    for element_name, values in parameters.items():
+        _jython_name(element_name, "element_name")
+        if type(values) is not dict:
+            raise TypeError("each element's parameters must be a dictionary")
+        for parameter_name in values:
+            _jython_name(parameter_name, "parameter_name")
+    return _jython_literal(parameters)
 
 
 class HmsJython:
@@ -733,8 +797,8 @@ import sys
         # Open project
         script += f'''
 # Open the HEC-HMS project
-project_path = r"{project_path}"
-project_name = "{project_name}"
+project_path = {_jython_name(str(project_path), "project_path")}
+project_name = {_jython_name(project_name, "project_name")}
 
 try:
     JythonHms.OpenProject(project_name, project_path)
@@ -758,7 +822,7 @@ except Exception as e:
         # Compute the run
         script += f'''
 # Compute the simulation run
-run_name = "{run_name}"
+run_name = {_jython_name(run_name, "run_name")}
 try:
     JythonHms.ComputeRun(run_name)
     print("Computation completed for: " + run_name)
@@ -802,8 +866,8 @@ except Exception as e:
         # Python 2 compatible code
         script += f'''
 # Open the HEC-HMS project
-project_path = r"{project_path}"
-project_name = "{project_name}"
+project_path = {_jython_name(str(project_path), "project_path")}
+project_name = {_jython_name(project_name, "project_name")}
 
 try:
     JythonHms.OpenProject(project_name, project_path)
@@ -813,7 +877,7 @@ except Exception, e:
     JythonHms.Exit(1)
 
 # Compute the simulation run
-run_name = "{run_name}"
+run_name = {_jython_name(run_name, "run_name")}
 try:
     JythonHms.Compute(run_name)
     print "Computation completed for: " + run_name
@@ -868,8 +932,8 @@ JythonHms.Exit(0)
         # Open project
         script += f'''
 # Open the HEC-HMS project
-project_path = r"{project_path}"
-project_name = "{project_name}"
+project_path = {_jython_name(str(project_path), "project_path")}
+project_name = {_jython_name(project_name, "project_name")}
 
 try:
     JythonHms.OpenProject(project_name, project_path)
@@ -879,7 +943,7 @@ except Exception as e:
     JythonHms.Exit(1)
 
 # List of runs to compute
-run_names = {run_names}
+run_names = {_jython_run_names(run_names)}
 results = {{}}
 
 # Compute each run
@@ -958,8 +1022,8 @@ except Exception as e:
 
         script += f'''
 # Open the HEC-HMS project
-project_path = r"{project_path}"
-project_name = "{project_name}"
+project_path = {_jython_name(str(project_path), "project_path")}
+project_name = {_jython_name(project_name, "project_name")}
 
 try:
     JythonHms.OpenProject(project_name, project_path)
@@ -969,7 +1033,7 @@ except Exception as e:
     JythonHms.Exit(1)
 
 # Open the basin model
-basin_name = "{basin_name}"
+basin_name = {_jython_name(basin_name, "basin_name")}
 try:
     basin = JythonHms.OpenBasinModel(basin_name)
     print("Basin model opened: " + basin_name)
@@ -978,7 +1042,7 @@ except Exception as e:
     JythonHms.Exit(1)
 
 # Modify parameters
-modifications = {modifications}
+modifications = {_jython_parameters(modifications)}
 
 for element_name, params in modifications.items():
     try:
@@ -1013,10 +1077,10 @@ except Exception as e:
 '''
 
         # Optionally run simulation
-        if run_name:
+        if run_name is not None:
             script += f'''
 # Compute simulation with modified parameters
-run_name = "{run_name}"
+run_name = {_jython_name(run_name, "run_name")}
 try:
     JythonHms.ComputeRun(run_name)
     print("Computation completed: " + run_name)
@@ -1090,12 +1154,12 @@ except Exception as e:
 
         script += f'''
 # Calibration script for HEC-HMS
-# Parameters: {parameters}
+# Parameter values are encoded below as data.
 
-project_path = r"{project_path}"
-project_name = "{project_name}"
-run_name = "{run_name}"
-basin_name = "{basin_name}"
+project_path = {_jython_name(str(project_path), "project_path")}
+project_name = {_jython_name(project_name, "project_name")}
+run_name = {_jython_name(run_name, "run_name")}
+basin_name = {_jython_name(basin_name, "basin_name")}
 
 # Open project
 try:
@@ -1113,7 +1177,7 @@ except Exception as e:
     JythonHms.Exit(1)
 
 # Apply calibration parameters to elements
-calibration_params = {parameters}
+calibration_params = {_jython_parameters(parameters)}
 print("CALIBRATION_PARAMS: " + str(calibration_params))
 
 for element_name, params in calibration_params.items():
