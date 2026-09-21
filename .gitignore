@@ -156,3 +156,6 @@ examples/upstream_analysis_outputs/
 
 # test temp
 .test-tmp/
+
+# Local MkDocs notebook rendering cache
+/.cache/

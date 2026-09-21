@@ -57,7 +57,7 @@ class HmsCmdr:
 
         Args:
             run_name: Name of the simulation run to execute
-            hms_object: Optional HmsPrj instance (uses global hms if None)
+            hms_object (HmsPrj, optional): Optional HmsPrj instance (uses global hms if None)
             dest_folder: Optional destination folder for execution
                         (copies project there first)
             overwrite_dest: Whether to overwrite existing destination
@@ -162,7 +162,7 @@ class HmsCmdr:
         Args:
             run_names: List of run names to execute (all runs if None)
             max_workers: Maximum number of parallel workers
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
             dest_folder: Base folder for worker copies
             timeout_per_run: Timeout per individual run in seconds
             max_memory: Maximum JVM heap size (default: "4G")
@@ -282,7 +282,7 @@ class HmsCmdr:
 
         Args:
             run_names: List of run names to execute
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
             save_after_each: Whether to save project after each run
             timeout: Total timeout for all runs in seconds
             max_memory: Maximum JVM heap size (default: "4G")
@@ -367,7 +367,7 @@ class HmsCmdr:
             run_name: Name of the simulation run
             basin_name: Name of the basin model to modify
             parameter_modifications: Dictionary of element -> parameter changes
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
             dest_folder: Destination for modified project
             timeout: Execution timeout in seconds
             max_memory: Maximum JVM heap size (default: "4G")

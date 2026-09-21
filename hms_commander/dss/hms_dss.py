@@ -726,8 +726,8 @@ class HmsDss:
         Args:
             dss_file: Path to DSS file (created if doesn't exist)
             pathname: DSS pathname (e.g., "//TX_R3/FIRST-QUARTILE/24HR///50%/")
-            x_values: X coordinates (e.g., time in hours) - numpy array or list
-            y_values: Y coordinates (e.g., cumulative fraction 0-1) - numpy array or list
+            x_values (Sequence[float]): X coordinates (e.g., time in hours) - numpy array or list
+            y_values (Sequence[float]): Y coordinates (e.g., cumulative fraction 0-1) - numpy array or list
             x_units: Units for X values (default: "HOURS")
             y_units: Units for Y values (default: "FRACTION")
             x_label: Label for X axis (default: "TIME")

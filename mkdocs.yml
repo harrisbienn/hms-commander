@@ -5,6 +5,9 @@ repo_url: https://github.com/gpt-cmdr/hms-commander
 repo_name: gpt-cmdr/hms-commander
 edit_uri: edit/main/docs/
 
+exclude_docs: |
+  README.md
+
 theme:
   name: material
   custom_dir: docs/overrides
@@ -58,6 +61,9 @@ plugins:
         - "examples/*/multi_version_test/**"
   - git-revision-date-localized:
       enable_creation_date: true
+      # Prepared copies have no independent Git history; keep dates on their source notebooks.
+      exclude:
+        - notebooks/10*_guide_*.ipynb
       type: timeago
 
 markdown_extensions:

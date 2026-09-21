@@ -50,7 +50,7 @@ class HmsGage:
 
         Args:
             gage_path: Path to the .gage file (optional if hms_object provided)
-            hms_object: HmsPrj instance (uses global hms if None)
+            hms_object (HmsPrj, optional): HmsPrj instance (uses global hms if None)
 
         Returns:
             DataFrame with columns: name, type, units, dss_file, dss_pathname
@@ -113,7 +113,7 @@ class HmsGage:
         Args:
             gage_name: Name of the gage
             gage_path: Path to the .gage file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Dictionary with all gage parameters
@@ -157,7 +157,7 @@ class HmsGage:
         Args:
             gage_name: Name of the gage
             gage_path: Path to the .gage file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             DSS pathname string
@@ -193,7 +193,7 @@ class HmsGage:
             units: Data units (IN, MM, CFS, etc.)
             data_type: DSS data type (PER-CUM, INST-VAL, etc.)
             description: Optional description
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             True if successful
@@ -257,7 +257,7 @@ Gage: {name}
             dss_file: New DSS file path (optional)
             pathname: New DSS pathname (optional)
             units: New units (optional)
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             True if successful
@@ -326,7 +326,7 @@ Gage: {name}
         Args:
             gage_path: Path to the .gage file
             gage_name: Name of the gage to delete
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             True if successful
@@ -358,7 +358,7 @@ Gage: {name}
 
         Args:
             gage_path: Path to the .gage file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             List of precipitation gage names
@@ -378,7 +378,7 @@ Gage: {name}
 
         Args:
             gage_path: Path to the .gage file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             List of discharge gage names
@@ -398,7 +398,7 @@ Gage: {name}
 
         Args:
             gage_path: Path to the .gage file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             List of unique DSS file paths

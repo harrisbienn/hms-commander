@@ -8,7 +8,7 @@ This directory contains the source files for HMS Commander's MkDocs documentatio
 
 ```bash
 # Install with docs dependencies
-pip install -e ".[docs]"
+python -m pip install -e ".[docs]" -c docs/constraints-docs.txt
 ```
 
 This installs:
@@ -21,8 +21,9 @@ This installs:
 ### Serve Documentation
 
 ```bash
-# From repository root
-mkdocs serve
+# From repository root; copies the tracked guide notebooks without execution
+python .github/scripts/prepare_docs.py
+python -m mkdocs serve
 ```
 
 Open http://localhost:8000 in your browser.
@@ -30,7 +31,8 @@ Open http://localhost:8000 in your browser.
 ### Build Static Site
 
 ```bash
-mkdocs build
+python .github/scripts/prepare_docs.py
+python -m mkdocs build --strict
 ```
 
 Output will be in `site/` directory.

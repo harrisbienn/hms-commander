@@ -287,3 +287,37 @@ This project follows the [LLM Forward](https://clbengineering.com/llm-forward) p
 ---
 
 *hms-commander is maintained by [CLB Engineering Corporation](https://clbengineering.com/). Licensed under MIT.*
+
+
+## Continuous integration
+
+The `CI` workflow runs for every PR and main push, with no path exclusions. Its
+unit matrix covers Python 3.10?3.12 on Linux and 3.12 on Windows using only the
+package's base dependencies and pytest. No HEC installation, Java, optional GIS,
+private model package, or external data service is needed. Reproduce it with:
+
+```bash
+python -m pip install . pytest==9.1.1
+python -I -m pytest tests/test_constants.py tests/test_parsing.py tests/test_jython_script_security.py tests/test_hms_examples.py tests/test_scenario.py tests/test_scenario_worker.py tests/test_timeseries_worker.py tests/test_handoff_worker.py tests/test_results_products.py -m "not requires_hms and not local_hms and not requires_java and not requires_gis and not requires_network and not slow"
+```
+
+The Jython injection regressions and existing download/cache fixture tests are
+included. Extend the HmsExamples coverage when issue #28 lands. Installed-engine,
+Java/GIS integration, and model qualification remain separate tests; this subset
+does not certify hydraulic or hydrologic results.
+
+The independent `Strict documentation` job installs `.[docs]` with
+`docs/constraints-docs.txt`, prepares tracked guide notebooks with
+`python .github/scripts/prepare_docs.py`, and runs `python -m mkdocs build --strict`.
+Notebook code is never executed. Prepared guide copies have no independent Git
+history and are excluded only from revision-date metadata, not documentation
+validation. The documentation README is build guidance, excluded from published
+pages because it collides with the homepage.
+
+All jobs use hosted workers, commit-pinned Actions, read-only repository tokens,
+nonpersistent checkout credentials, and no publishing secrets. Dependabot proposes
+Action and package updates. Administrators must make the four unit matrix checks
+and `Strict documentation` required on protected main; a passing optional check
+does not prevent an unchecked merge. Main was unprotected when checked on
+2026-09-21. Documentation constraints pin the build tools; broader runtime and
+transitive dependency qualification is a separate maintenance task.

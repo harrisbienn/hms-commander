@@ -69,7 +69,7 @@ class HmsBasin:
 
         Args:
             basin_path: Path to the .basin file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             DataFrame with columns: name, area, downstream, loss_method,
@@ -115,7 +115,7 @@ class HmsBasin:
 
         Args:
             basin_path: Path to the .basin file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             DataFrame with columns: name, downstream, canvas_x, canvas_y
@@ -150,7 +150,7 @@ class HmsBasin:
 
         Args:
             basin_path: Path to the .basin file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             DataFrame with columns: name, downstream, route_method, etc.
@@ -190,7 +190,7 @@ class HmsBasin:
         Args:
             basin_path: Path to the .basin file
             subbasin_name: Name of the subbasin
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Dictionary of loss parameters (varies by method type)
@@ -267,7 +267,7 @@ class HmsBasin:
             percolation_rate: Percolation rate (in/hr or mm/hr)
             percent_impervious: Percent impervious area (0-100)
             curve_number: SCS curve number (0-100)
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             True if successful
@@ -352,7 +352,7 @@ class HmsBasin:
         Args:
             basin_path: Path to the .basin file
             subbasin_name: Name of the subbasin
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Dictionary of transform parameters
@@ -405,7 +405,7 @@ class HmsBasin:
         Args:
             basin_path: Path to the .basin file
             subbasin_name: Name of the subbasin
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Dictionary of baseflow parameters
@@ -455,7 +455,7 @@ class HmsBasin:
         Args:
             basin_path: Path to the .basin file
             reach_name: Name of the reach
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Dictionary of routing parameters
@@ -520,13 +520,13 @@ class HmsBasin:
         Args:
             basin_path: Path to the .basin file
             reach_name: Name of the reach to update
-            sd_df: DataFrame with columns ``['storage_acft', 'outflow_cfs']``
+            sd_df (pandas.DataFrame): DataFrame with columns ``['storage_acft', 'outflow_cfs']``
                    (as returned by ``RasModPuls.extract_storage_outflow()``)
             number_of_subreaches: Number of Modified Puls subreaches
                                    (from ``RasModPuls.compute_subreach_count()``)
             table_name: Name for the paired data table. Auto-generated from reach
                         name if None (e.g., "ModPuls_{reach_name}").
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             str: Name of the paired data table written
@@ -604,7 +604,7 @@ class HmsBasin:
             template_basin: Name or path of the template basin file
             new_name: Name for the new basin model
             description: Optional description (defaults to "Cloned from {template}")
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Path to the new basin file
@@ -726,7 +726,7 @@ class HmsBasin:
 
         Args:
             basin_path: Path to the .basin file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             DataFrame with columns: name, downstream, divert_to, canvas_x,
@@ -771,7 +771,7 @@ class HmsBasin:
 
         Args:
             basin_path: Path to the .basin file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             DataFrame with columns: name, downstream, canvas_x, canvas_y,
@@ -811,7 +811,7 @@ class HmsBasin:
 
         Args:
             basin_path: Path to the .basin file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             DataFrame with columns: name, downstream, area, canvas_x, canvas_y,
@@ -852,7 +852,7 @@ class HmsBasin:
 
         Args:
             basin_path: Path to the .basin file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             DataFrame with columns: name, canvas_x, canvas_y, description
@@ -891,7 +891,7 @@ class HmsBasin:
 
         Args:
             basin_path: Path to the .basin file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             dict: {element_name: [{'name': str, 'type': str}, ...]}
@@ -959,7 +959,7 @@ class HmsBasin:
         Args:
             basin_path: Path to the .basin file
             target_element: Name of element to find upstream of
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             dict: {
@@ -1026,7 +1026,7 @@ class HmsBasin:
         Args:
             basin_path: Path to the .basin file
             target_element: Name of element to calculate area for
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             float: Total area in square miles (or model units)
@@ -1078,7 +1078,7 @@ class HmsBasin:
 
         Args:
             basin_path: Path to the .basin file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             DataFrame with 'name' column identifying each subbasin and
@@ -1104,7 +1104,7 @@ class HmsBasin:
 
         Args:
             basin_path: Path to the .basin file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             DataFrame with 'name' column identifying each subbasin and
@@ -1129,7 +1129,7 @@ class HmsBasin:
 
         Args:
             basin_path: Path to the .basin file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             DataFrame with 'name' column identifying each subbasin and
@@ -1153,7 +1153,7 @@ class HmsBasin:
 
         Args:
             basin_path: Path to the .basin file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             DataFrame with 'name' column identifying each reach and
@@ -1186,7 +1186,7 @@ class HmsBasin:
             basin_path: Path to the .basin file
             params_df: DataFrame with 'name' column and parameter columns
             create_backup: Create .bak backup before writing (default True)
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Summary dict with keys: elements_modified, parameters_changed,
@@ -1217,7 +1217,7 @@ class HmsBasin:
             basin_path: Path to the .basin file
             params_df: DataFrame with 'name' column and parameter columns
             create_backup: Create .bak backup before writing (default True)
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Summary dict
@@ -1247,7 +1247,7 @@ class HmsBasin:
             basin_path: Path to the .basin file
             params_df: DataFrame with 'name' column and parameter columns
             create_backup: Create .bak backup before writing (default True)
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Summary dict
@@ -1272,7 +1272,7 @@ class HmsBasin:
             basin_path: Path to the .basin file
             params_df: DataFrame with 'name' column and parameter columns
             create_backup: Create .bak backup before writing (default True)
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Summary dict
@@ -1303,7 +1303,7 @@ class HmsBasin:
             param_types: List of parameter types to export. Options:
                 'loss', 'transform', 'baseflow', 'routing'.
                 Default None exports all types.
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Path to the created CSV file
@@ -1424,15 +1424,17 @@ class HmsBasin:
             basin_path: Path to the .basin file
             input_csv: Path to the input CSV file
             create_backup: Create .bak backup before writing (default True)
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Dict with results per param_type:
             {'loss': {summary}, 'transform': {summary}, ...}
 
         Example:
+            ```python
             >>> result = HmsBasin.import_parameters_csv("model.basin", "params.csv")
             >>> print(result['loss']['elements_modified'])
+            ```
         """
         basin_path = Path(basin_path)
         input_csv = Path(input_csv)

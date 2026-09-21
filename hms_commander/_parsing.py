@@ -104,11 +104,13 @@ class HmsFileParser:
             Dict mapping element names to their attribute dictionaries
 
         Example:
+            ```python
             >>> blocks = HmsFileParser.parse_blocks(content, "Subbasin")
             >>> print(blocks["Sub1"]["Area"])
             '100.0'
             >>> print(blocks["Sub1"]["Downstream"])
             'Junction-1'
+            ```
         """
         elements = {}
         pattern = rf'{block_keyword}:\s*(.+?)\n(.*?)End:'

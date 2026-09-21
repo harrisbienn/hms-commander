@@ -375,7 +375,7 @@ class HmsArf:
         Args:
             basin_path: Path to the .basin file
             kcda_junctions: List of KCDA junction names (analysis points)
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             DataFrame with columns:
@@ -503,7 +503,7 @@ class HmsArf:
             kcda_junctions: KCDA junction names (analysis points)
             dar_curve: DAR curve (see ``lookup_arf_from_dar`` for accepted formats)
             duration_hours: Storm duration for DAR curve lookup (default: 24)
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             DataFrame sorted ascending by CDA with columns:

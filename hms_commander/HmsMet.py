@@ -58,7 +58,7 @@ class HmsMet:
         Get all meteorologic models from the HMS project.
 
         Args:
-            hms_object: HmsPrj instance (uses global hms if None)
+            hms_object (HmsPrj, optional): HmsPrj instance (uses global hms if None)
 
         Returns:
             DataFrame with meteorologic model information
@@ -82,7 +82,7 @@ class HmsMet:
 
         Args:
             met_path: Path to the .met file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Precipitation method name string
@@ -111,7 +111,7 @@ class HmsMet:
 
         Args:
             met_path: Path to the .met file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Evapotranspiration method name string
@@ -133,7 +133,7 @@ class HmsMet:
 
         Args:
             met_path: Path to the .met file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             DataFrame with columns: subbasin, precip_gage, weight
@@ -179,7 +179,7 @@ class HmsMet:
             subbasin_name: Name of the subbasin
             gage_name: Name of the precipitation gage
             weight: Gage weight (default 1.0)
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             True if successful
@@ -264,7 +264,7 @@ End:
             met_path: Path to the .met file
             assignments_df: DataFrame with columns: subbasin, precip_gage, weight
             create_backup: Create .bak backup before writing (default True)
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Summary dict with keys: subbasins_modified, subbasins_not_found,
@@ -373,7 +373,7 @@ End:
 
         Args:
             met_path: Path to the .met file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             List of dictionaries with DSS file information
@@ -416,7 +416,7 @@ End:
 
         Args:
             met_path: Path to the .met file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Dictionary with all meteorologic model parameters
@@ -456,7 +456,7 @@ End:
             template_met: Name or path of the template met file
             new_name: Name for the new meteorologic model
             description: Optional description (defaults to "Cloned from {template}")
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Path to the new met file
@@ -575,7 +575,7 @@ End:
         Args:
             met_path: Path to the .met file
             method: Precipitation method name
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             True if successful
@@ -617,7 +617,7 @@ End:
                 ``depths`` for frequency storms, ``gage_assignments`` for gage
                 methods, and ``grid_name``/``dss_file``/``dss_pathname`` for
                 gridded precipitation.
-            hms_object: Optional HmsPrj instance.
+            hms_object (HmsPrj, optional): Optional HmsPrj instance.
 
         Returns:
             Summary dictionary describing the precipitation update.
@@ -1173,7 +1173,7 @@ End:
 
         Args:
             met_path: Path to the .met file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Dictionary with frequency storm parameters including depth values
@@ -1252,7 +1252,7 @@ End:
 
         Args:
             met_path: Path to the .met file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             List of depth values in inches
@@ -1279,7 +1279,7 @@ End:
         Args:
             met_path: Path to the .met file
             new_depths: List of new depth values in inches
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             True if successful
@@ -1343,15 +1343,17 @@ End:
         Args:
             met_path: Path to the .met file
             atlas14_depths: Atlas 14 depth values in inches
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Optional HmsPrj instance
 
         Returns:
             Dictionary with old depths, new depths, and change percentages
 
         Example:
+            ```python
             >>> atlas14 = [1.35, 2.4, 4.8, 6.3, 7.4, 9.8, 11.9, 14.5]
             >>> result = HmsMet.update_tp40_to_atlas14("1PCT_24HR.met", atlas14)
-            >>> print(f"24-hr depth changed by {result['changes'][-1]:.1f}%")
+            >>> print(f"24-hr depth changed by {result['changes_percent'][-1]:.1f}%")
+            ```
         """
         met_path = Path(met_path)
 

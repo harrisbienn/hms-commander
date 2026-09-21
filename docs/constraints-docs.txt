@@ -1,0 +1,9 @@
+# Tested documentation toolchain; update with a strict rebuild.
+mkdocs==1.6.1
+mkdocs-material==9.7.7
+mkdocstrings==1.0.6
+mkdocstrings-python==2.0.8
+griffelib==2.3.0
+mkdocs-autorefs==1.4.4
+mkdocs-jupyter==0.26.3
+mkdocs-git-revision-date-localized-plugin==1.6.0
