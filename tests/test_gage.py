@@ -148,3 +148,47 @@ class TestErrorHandling:
     def test_missing_gage_pathname(self, gage_path):
         with pytest.raises(ValueError):
             HmsGage.get_dss_pathname("NONEXISTENT_GAGE", gage_path)
+
+
+def test_bind_manual_variant_as_external_preserves_other_gages(tmp_path):
+    from pathlib import Path
+
+    source = Path(__file__).parent / (
+        "projects/2014.08_HMS/A1000000_upgrade_411/A1000000.gage"
+    )
+    target = tmp_path / "project.gage"
+    original = source.read_text()
+    target.write_text(original)
+    old = HmsGage.get_gage_info("A120_10_ex", source)
+    HmsGage.bind_external_dss(
+        target, "A120_10_ex", r"forcing\zero.dss", "//UPSTREAM/FLOW//1HOUR/INTERIM/"
+    )
+    updated = HmsGage.get_gage_info("A120_10_ex", target)
+    assert updated["Data Source Type"] == "External DSS"
+    assert updated["DSS File Name"] == r"forcing\zero.dss"
+    assert updated["DSS Pathname"] == "//UPSTREAM/FLOW//1HOUR/INTERIM/"
+    assert updated["Units"] == old["Units"]
+    assert updated["Data Type"] == old["Data Type"]
+    assert updated["Variant"] == "Variant-1"
+    assert "Start Time" not in updated
+    assert "End Time" not in updated and "Filename" not in updated
+    assert target.read_text().split("Gage: A120_10_pr", 1)[1] == (
+        original.split("Gage: A120_10_pr", 1)[1]
+    )
+    first = target.read_bytes()
+    HmsGage.bind_external_dss(
+        target, "A120_10_ex", r"forcing\zero.dss", "//UPSTREAM/FLOW//1HOUR/INTERIM/"
+    )
+    assert target.read_bytes() == first
+
+
+def test_bind_external_rejects_ambiguous_variants_without_writing(tmp_path):
+    path = tmp_path / "ambiguous.gage"
+    path.write_text(
+        "Gage: Flow\n     Variant: One\n     End Variant: One\n"
+        "     Variant: Two\n     End Variant: Two\nEnd:\n"
+    )
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match="multiple variants"):
+        HmsGage.bind_external_dss(path, "Flow", "flow.dss", "//A/FLOW//1HOUR/F/")
+    assert path.read_bytes() == before

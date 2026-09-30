@@ -221,6 +221,30 @@ def _validated_target_grid(value: Any) -> dict[str, Any]:
     return dict(value)
 
 
+def _validated_ras_model(model: Any, *, multi_area: bool) -> None:
+    _required_mapping(
+        model,
+        {
+            "project_id",
+            "plan_id",
+            "geometry_id",
+            "two_d_flow_areas" if multi_area else "two_d_flow_area",
+        },
+        label="RAS application-area model",
+    )
+    for key, value in model.items():
+        if key == "two_d_flow_areas":
+            if (
+                not isinstance(value, list)
+                or not value
+                or any(not isinstance(name, str) or not name.strip() for name in value)
+                or value != sorted(set(value))
+            ):
+                raise ValueError("two_d_flow_areas must be uniquely sorted names")
+        else:
+            _non_empty(value, label=f"RAS application-area model.{key}")
+
+
 def _validated_application_area(value: Any) -> dict[str, Any]:
     try:
         normalized = json.loads(json.dumps(value, sort_keys=True, allow_nan=False))
@@ -228,9 +252,27 @@ def _validated_application_area(value: Any) -> dict[str, Any]:
         raise ValueError("RAS application area must be JSON serializable") from exc
     if not isinstance(normalized, dict):
         raise ValueError("RAS application area must be an object")
-    if normalized.get("schema") != ("ras-commander/precipitation-application-area/1.0"):
+    center_selected = (
+        normalized.get("method") == "ras-mesh-center-selected-full-cell-area"
+    )
+    multi_area = (
+        normalized.get("schema") == "ras-commander/precipitation-application-area/3.0"
+    )
+    expected_schema = (
+        "ras-commander/precipitation-application-area/3.0"
+        if multi_area and center_selected
+        else (
+            "ras-commander/precipitation-application-area/2.0"
+            if center_selected
+            else "ras-commander/precipitation-application-area/1.0"
+        )
+    )
+    if normalized.get("schema") != expected_schema:
         raise ValueError("RAS application-area schema is unsupported")
-    if normalized.get("method") != "ras-mesh-effective-area":
+    if normalized.get("method") not in {
+        "ras-mesh-effective-area",
+        "ras-mesh-center-selected-full-cell-area",
+    }:
         raise ValueError("RAS application-area method is unsupported")
     recorded_hash = normalized.pop("application_area_sha256", None)
     if not isinstance(recorded_hash, str) or recorded_hash != _canonical_sha256(
@@ -238,14 +280,14 @@ def _validated_application_area(value: Any) -> dict[str, Any]:
     ):
         raise ValueError("RAS application-area hash is missing or invalid")
     normalized["application_area_sha256"] = recorded_hash
+    if center_selected and (
+        normalized.get("area_basis") != "selected-full-grid-cells"
+        or normalized.get("boundary_predicate") != "target-center-within-mesh-cell"
+        or normalized.get("algorithm") != "target-center-within-mesh-cell-full-area-v1"
+    ):
+        raise ValueError("RAS center-selected application-area rule is unsupported")
 
-    _required_mapping(
-        normalized.get("model"),
-        {"project_id", "plan_id", "geometry_id", "two_d_flow_area"},
-        label="RAS application-area model",
-    )
-    for key, model_value in normalized["model"].items():
-        _non_empty(model_value, label=f"RAS application-area model.{key}")
+    _validated_ras_model(normalized.get("model"), multi_area=multi_area)
 
     grid = _validated_target_grid(normalized.get("target_grid"))
     rows, columns = grid["shape"]
@@ -283,6 +325,8 @@ def _validated_application_area(value: Any) -> dict[str, Any]:
         ):
             raise ValueError("RAS application-area cell area is outside valid bounds")
         membership = cell.get("membership")
+        if center_selected and membership == "partial":
+            raise ValueError("center-selected RAS allocation areas must be full cells")
         if membership == "outside" and effective_area != 0:
             raise ValueError("outside RAS cells must have zero effective area")
         if membership == "inside" and effective_area != cell_area:
@@ -450,6 +494,9 @@ class HmsSubbasinTransfer:
     ALGORITHM = "target-center-subbasin-coverage-effective-area-scaling-v1"
     AUDIT_SCHEMA = "hms-commander/subbasin-volume-transfer-audit/1.0"
     PRODUCT_SCHEMA = "hms-commander/subbasin-volume-excess-product/1.0"
+    CENTER_METHOD = "hms-subbasin-centroid-full-cell-v1"
+    CENTER_ALGORITHM = "target-center-within-mesh-and-subbasin-full-cell-scaling-v1"
+    METHODS = frozenset({METHOD, CENTER_METHOD})
     AREA_PRECISION_DECIMAL_PLACES = 9
 
     @staticmethod
@@ -463,12 +510,14 @@ class HmsSubbasinTransfer:
         name_column: str = "subbasin",
         source_area_column: str = "source_area",
         source_area_units_column: str = "source_area_units",
+        method: str = "hms-subbasin-volume-conserving-v1",
     ) -> dict[str, Any]:
         """Compile a deterministic, volume-conserving spatial transfer map.
 
-        Target cells are attributed using their center points, matching the
-        received engineering prototype. The denominator uses the exact RAS
-        effective receiving area rather than the full fishnet cell area.
+        The default uses subbasin coverage and clipped RAS receiving areas.
+        ``hms-subbasin-centroid-full-cell-v1`` matches the September 29
+        prototype: strict center containment and full selected grid-cell areas.
+        Its volume checks describe grid allocation, not physical mesh volume.
 
         Args:
             subbasins: GeoDataFrame containing unique polygon subbasins,
@@ -481,6 +530,9 @@ class HmsSubbasinTransfer:
             name_column: Column containing HMS/DSS subbasin names.
             source_area_column: Column containing positive source areas.
             source_area_units_column: Column containing explicit area units.
+            method: Versioned attribution and area-scaling rule. The center
+                method requires center-selected application-area 2.0 (one area)
+                or 3.0 (multiple named areas).
 
         Returns:
             Validated JSON-serializable transfer-map artifact.
@@ -500,6 +552,18 @@ class HmsSubbasinTransfer:
             ) from exc
 
         normalized_application = _validated_application_area(application_area)
+        if method not in HmsSubbasinTransfer.METHODS:
+            raise ValueError("subbasin transfer method is unsupported")
+        center_selected = method == HmsSubbasinTransfer.CENTER_METHOD
+        expected_area_method = (
+            "ras-mesh-center-selected-full-cell-area"
+            if center_selected
+            else "ras-mesh-effective-area"
+        )
+        if normalized_application["method"] != expected_area_method:
+            raise ValueError(
+                "transfer method does not match the RAS application-area rule"
+            )
         normalized_model = _normalized_hms_model(hms_model)
         if isinstance(selected_subbasins, (str, bytes)):
             raise ValueError("selected_subbasins must be an iterable of names")
@@ -518,6 +582,8 @@ class HmsSubbasinTransfer:
             source_area_units_column,
             "geometry",
         }
+        if center_selected:
+            required_columns = {name_column, "geometry"}
         if subbasins is None or not required_columns.issubset(
             set(getattr(subbasins, "columns", []))
         ):
@@ -588,8 +654,8 @@ class HmsSubbasinTransfer:
         for _, row in working.iterrows():
             name = str(row[name_column])
             area = _normalized_area(
-                row[source_area_column],
-                row[source_area_units_column],
+                row.geometry.area if center_selected else row[source_area_column],
+                "SQUARE_METERS" if center_selected else row[source_area_units_column],
                 label=f"subbasin {name!r}",
             )
             subbasin_by_name[name] = {
@@ -612,7 +678,11 @@ class HmsSubbasinTransfer:
                 matches = [
                     name
                     for name in selected_names
-                    if geometry_by_name[name].covers(point)
+                    if (
+                        geometry_by_name[name].contains(point)
+                        if center_selected
+                        else geometry_by_name[name].covers(point)
+                    )
                 ]
                 if len(matches) > 1:
                     raise ValueError(
@@ -668,9 +738,22 @@ class HmsSubbasinTransfer:
             item["receiving_area_square_meters"] for item in ordered_subbasins
         )
         artifact: dict[str, Any] = {
-            "schema": HmsSubbasinTransfer.SCHEMA,
-            "method": HmsSubbasinTransfer.METHOD,
-            "algorithm": HmsSubbasinTransfer.ALGORITHM,
+            "schema": (
+                "hms-commander/subbasin-volume-transfer-map/3.0"
+                if normalized_application["schema"]
+                == "ras-commander/precipitation-application-area/3.0"
+                else (
+                    "hms-commander/subbasin-volume-transfer-map/2.0"
+                    if center_selected
+                    else HmsSubbasinTransfer.SCHEMA
+                )
+            ),
+            "method": method,
+            "algorithm": (
+                HmsSubbasinTransfer.CENTER_ALGORITHM
+                if center_selected
+                else HmsSubbasinTransfer.ALGORITHM
+            ),
             "hms_model": normalized_model,
             "source_subbasin_crs": source_crs_name,
             "source_subbasin_geometry_sha256": source_geometry_sha256,
@@ -683,7 +766,11 @@ class HmsSubbasinTransfer:
                 "model": normalized_application["model"],
             },
             "target_grid": target_grid,
-            "assignment_predicate": "subbasin-covers-target-cell-center",
+            "assignment_predicate": (
+                "target-center-within-subbasin"
+                if center_selected
+                else "subbasin-covers-target-cell-center"
+            ),
             "outside_support_behavior": "zero",
             "area_precision_decimal_places": (
                 HmsSubbasinTransfer.AREA_PRECISION_DECIMAL_PLACES
@@ -715,6 +802,8 @@ class HmsSubbasinTransfer:
                 ),
             },
         }
+        if center_selected:
+            artifact["area_basis"] = "selected-full-grid-cells"
         artifact["transfer_map_sha256"] = _canonical_sha256(artifact)
         return HmsSubbasinTransfer.validate_transfer_map(artifact)
 
@@ -728,6 +817,7 @@ class HmsSubbasinTransfer:
             )
         except (TypeError, ValueError) as exc:
             raise ValueError("transfer map must be JSON serializable") from exc
+        center_selected = normalized.get("method") == HmsSubbasinTransfer.CENTER_METHOD
         _required_mapping(
             normalized,
             {
@@ -747,7 +837,8 @@ class HmsSubbasinTransfer:
                 "cells",
                 "metrics",
                 "transfer_map_sha256",
-            },
+            }
+            | ({"area_basis"} if center_selected else set()),
             label="subbasin volume transfer map",
         )
         expected_constants = {
@@ -760,6 +851,21 @@ class HmsSubbasinTransfer:
                 HmsSubbasinTransfer.AREA_PRECISION_DECIMAL_PLACES
             ),
         }
+        multi_area = (
+            normalized["schema"] == "hms-commander/subbasin-volume-transfer-map/3.0"
+        )
+        if center_selected:
+            expected_constants.update(
+                schema=(
+                    "hms-commander/subbasin-volume-transfer-map/3.0"
+                    if multi_area
+                    else "hms-commander/subbasin-volume-transfer-map/2.0"
+                ),
+                method=HmsSubbasinTransfer.CENTER_METHOD,
+                algorithm=HmsSubbasinTransfer.CENTER_ALGORITHM,
+                assignment_predicate="target-center-within-subbasin",
+                area_basis="selected-full-grid-cells",
+            )
         if any(normalized[key] != value for key, value in expected_constants.items()):
             raise ValueError("transfer-map method or algorithm identity is unsupported")
         normalized["hms_model"] = _normalized_hms_model(normalized["hms_model"])
@@ -782,21 +888,23 @@ class HmsSubbasinTransfer:
             {"schema", "method", "application_area_sha256", "model"},
             label="ras_application_area",
         )
-        if (
-            ras_application["schema"]
-            != ("ras-commander/precipitation-application-area/1.0")
-            or ras_application["method"] != "ras-mesh-effective-area"
+        if ras_application["schema"] != (
+            "ras-commander/precipitation-application-area/3.0"
+            if multi_area and center_selected
+            else (
+                "ras-commander/precipitation-application-area/2.0"
+                if center_selected
+                else "ras-commander/precipitation-application-area/1.0"
+            )
+        ) or ras_application["method"] != (
+            "ras-mesh-center-selected-full-cell-area"
+            if center_selected
+            else "ras-mesh-effective-area"
         ):
             raise ValueError("ras_application_area identity is unsupported")
         if not _SHA256_PATTERN.fullmatch(ras_application["application_area_sha256"]):
             raise ValueError("ras_application_area hash is invalid")
-        _required_mapping(
-            ras_application["model"],
-            {"project_id", "plan_id", "geometry_id", "two_d_flow_area"},
-            label="ras_application_area.model",
-        )
-        for key, value in ras_application["model"].items():
-            _non_empty(value, label=f"ras_application_area.model.{key}")
+        _validated_ras_model(ras_application["model"], multi_area=multi_area)
 
         grid = _validated_target_grid(normalized["target_grid"])
         normalized["target_grid"] = grid
@@ -857,6 +965,10 @@ class HmsSubbasinTransfer:
             ):
                 raise ValueError("transfer-map cell values are outside valid bounds")
             name = cell.get("subbasin")
+            if center_selected and effective_area not in {0.0, cell_area}:
+                raise ValueError(
+                    "center-selected transfer allocation must use full cell areas"
+                )
             if name is None:
                 if depth_multiplier != 0:
                     raise ValueError("unassigned cells must have a zero multiplier")
@@ -871,8 +983,6 @@ class HmsSubbasinTransfer:
             assigned_counts[name] += 1
             receiving_areas[name] += effective_area
 
-        source_area_total = 0.0
-        receiving_area_total = 0.0
         for name, subbasin in by_name.items():
             _required_mapping(
                 subbasin,
@@ -911,9 +1021,15 @@ class HmsSubbasinTransfer:
                 != source_area["square_meters"] / receiving_area
             ):
                 raise ValueError(f"subbasin {name!r} denominator is inconsistent")
-            source_area_total += source_area["square_meters"]
-            receiving_area_total += receiving_area
 
+        # Match the compiler's summation order/algorithm (Python 3.12 sum
+        # compensates floating-point error; repeated += does not).
+        source_area_total = sum(
+            item["source_area"]["square_meters"] for item in subbasins
+        )
+        receiving_area_total = sum(
+            item["receiving_area_square_meters"] for item in subbasins
+        )
         metrics = normalized["metrics"]
         expected_metrics = {
             "selected_subbasin_count": len(subbasins),
@@ -1151,6 +1267,7 @@ class HmsSubbasinTransfer:
     ) -> dict[str, Any]:
         """Apply a compiled map and publish a verified RAS-grid DSS product."""
         normalized_map = HmsSubbasinTransfer.validate_transfer_map(transfer_map)
+        center_selected = normalized_map["method"] == HmsSubbasinTransfer.CENTER_METHOD
         tolerance = _normalized_volume_tolerance(volume_tolerance)
         try:
             readback_tolerance = float(readback_absolute_value_tolerance)
@@ -1255,9 +1372,13 @@ class HmsSubbasinTransfer:
         published_evidence = write_result.pop("published_volume_evidence")
 
         audit: dict[str, Any] = {
-            "schema": HmsSubbasinTransfer.AUDIT_SCHEMA,
-            "method": HmsSubbasinTransfer.METHOD,
-            "algorithm": HmsSubbasinTransfer.ALGORITHM,
+            "schema": (
+                "hms-commander/subbasin-volume-transfer-audit/2.0"
+                if center_selected
+                else HmsSubbasinTransfer.AUDIT_SCHEMA
+            ),
+            "method": normalized_map["method"],
+            "algorithm": normalized_map["algorithm"],
             "transfer_map_sha256": normalized_map["transfer_map_sha256"],
             "source": source_evidence,
             "model_window": {
@@ -1272,15 +1393,21 @@ class HmsSubbasinTransfer:
             "published_volume": published_evidence,
             "readback": write_result["verification"],
         }
+        if center_selected:
+            audit["area_basis"] = "selected-full-grid-cells"
         audit["audit_sha256"] = _canonical_sha256(audit)
         HmsSubbasinTransfer._write_json_new(audit_path, audit)
 
         manifest: dict[str, Any] = {
-            "schema": HmsSubbasinTransfer.PRODUCT_SCHEMA,
+            "schema": (
+                "hms-commander/subbasin-volume-excess-product/2.0"
+                if center_selected
+                else HmsSubbasinTransfer.PRODUCT_SCHEMA
+            ),
             "status": "qualification_only",
             "forecast_eligible": False,
-            "method": HmsSubbasinTransfer.METHOD,
-            "algorithm": HmsSubbasinTransfer.ALGORITHM,
+            "method": normalized_map["method"],
+            "algorithm": normalized_map["algorithm"],
             "transfer_map_sha256": normalized_map["transfer_map_sha256"],
             "source": source_evidence,
             "audit": {
@@ -1305,6 +1432,8 @@ class HmsSubbasinTransfer:
             },
             "volume": published_evidence,
         }
+        if center_selected:
+            manifest["area_basis"] = "selected-full-grid-cells"
         manifest["manifest_sha256"] = _canonical_sha256(manifest)
         HmsSubbasinTransfer._write_json_new(manifest_path, manifest)
         return manifest

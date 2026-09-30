@@ -358,19 +358,7 @@ class DssCore:
                     f"Mismatched array lengths: {values.size} values, {times.size} times"
                 )
 
-            # Convert HEC time to numpy datetime64
-            # HEC epoch: December 31, 1899 00:00:00
-            HEC_EPOCH = np.datetime64('1899-12-31T00:00:00')
-
-            # Convert times (minutes since epoch) to timedelta
-            # Handle potential invalid/missing times
-            times_minutes = times.astype('int64')  # Ensure integer type
-            time_deltas = pd.to_timedelta(times_minutes, unit='m')
-
-            # Add to epoch to get actual datetimes
-            datetimes = pd.DatetimeIndex(
-                [HEC_EPOCH.astype('datetime64[ns]') + td for td in time_deltas]
-            )
+            datetimes = DssCore._hec_times_to_datetime_index(times)
 
             # Create DataFrame with DatetimeIndex for time series operations
             df = pd.DataFrame({
@@ -542,6 +530,13 @@ class DssCore:
                 dss.done()
 
     @staticmethod
+    def _hec_times_to_datetime_index(times: Sequence[int]) -> pd.DatetimeIndex:
+        """Convert HEC minutes without the nanosecond range limit (Year 3000)."""
+        epoch = np.datetime64("1899-12-31T00:00:00", "s")
+        offsets = np.asarray(times, dtype="int64").astype("timedelta64[m]")
+        return pd.DatetimeIndex(epoch + offsets)
+
+    @staticmethod
     def _hec_time_to_datetime(hec_time_minutes: int) -> 'pd.Timestamp':
         """
         Convert HEC time (minutes since 1899-12-31) to Python datetime.
@@ -552,8 +547,7 @@ class DssCore:
         Returns:
             pandas Timestamp
         """
-        HEC_EPOCH = pd.Timestamp('1899-12-31 00:00:00')
-        return HEC_EPOCH + pd.Timedelta(minutes=int(hec_time_minutes))
+        return DssCore._hec_times_to_datetime_index([hec_time_minutes])[0]
 
     @staticmethod
     def get_peak_value(

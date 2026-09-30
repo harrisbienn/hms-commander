@@ -154,6 +154,73 @@ def _compile(
     )
 
 
+@pytest.mark.parametrize("multi_area", [False, True])
+def test_center_method_matches_strict_subbasin_selection_and_polygon_area(
+    multi_area,
+) -> None:
+    from ras_commander.precip import PrecipitationApplicationArea
+
+    mesh = gpd.GeoDataFrame(
+        {"mesh_name": ["Area"], "cell_id": [1]},
+        geometry=[box(0, 0, 26, 20)],
+        crs="EPSG:3857",
+    )
+    area = PrecipitationApplicationArea.compile_from_mesh_cells(
+        mesh,
+        ["Area"] if multi_area else "Area",
+        _target_grid(),
+        project_id="ras",
+        plan_id="p01",
+        geometry_id="g01",
+        source_geometry_hdf={
+            "name": "fixture.hdf",
+            "size_bytes": 1,
+            "sha256": "a" * 64,
+        },
+        method=PrecipitationApplicationArea.CENTER_METHOD,
+    )
+    subs = gpd.GeoDataFrame(
+        {"subbasin": ["A", "B"]},
+        geometry=[box(0, 0, 15, 20), box(15, 0, 30, 20)],
+        crs="EPSG:3857",
+    )
+    artifact = HmsSubbasinTransfer.compile_transfer_map(
+        subs,
+        area,
+        ["A", "B"],
+        _hms_model(),
+        method=HmsSubbasinTransfer.CENTER_METHOD,
+    )
+    version = "3.0" if multi_area else "2.0"
+    assert artifact["schema"] == f"hms-commander/subbasin-volume-transfer-map/{version}"
+    assert artifact["area_basis"] == "selected-full-grid-cells"
+    assert [c["subbasin"] for c in artifact["cells"]] == [
+        "A",
+        None,
+        "B",
+        "A",
+        None,
+        "B",
+    ]
+    assert [s["depth_multiplier"] for s in artifact["subbasins"]] == [1.5, 1.5]
+    assert all(s["source_area"]["square_meters"] == 300 for s in artifact["subbasins"])
+    assert (
+        sum(
+            c["effective_area_square_meters"] * c["depth_multiplier"]
+            for c in artifact["cells"]
+        )
+        == 600
+    )
+    with pytest.raises(ValueError, match="application-area rule"):
+        HmsSubbasinTransfer.compile_transfer_map(subs, area, ["A", "B"], _hms_model())
+    schema = json.loads(
+        files("hms_commander")
+        .joinpath(f"contracts/subbasin-volume-transfer-map-v{version}.schema.json")
+        .read_text()
+    )
+    pytest.importorskip("jsonschema").validate(artifact, schema)
+
+
 def test_compile_assigns_asymmetric_grid_and_conserves_each_subbasin() -> None:
     artifact = _compile()
 
@@ -198,6 +265,23 @@ def test_compile_assigns_asymmetric_grid_and_conserves_each_subbasin() -> None:
         "assigned_receiving_area_square_meters": 300.0,
         "unassigned_positive_area_square_meters": 75.0,
     }
+
+
+def test_legacy_validation_uses_compiler_summation_for_mixed_area_magnitudes():
+    subs = gpd.GeoDataFrame(
+        {
+            "subbasin": ["A", "B", "C"],
+            "source_area": [1e16, 1, 1],
+            "source_area_units": ["M2"] * 3,
+        },
+        geometry=[box(i * 10, 0, (i + 1) * 10, 20) for i in range(3)],
+        crs="EPSG:3857",
+    )
+    artifact = HmsSubbasinTransfer.compile_transfer_map(
+        subs, _application_area(), ["A", "B", "C"], _hms_model()
+    )
+    assert artifact["metrics"]["source_area_square_meters"] == sum([1e16, 1.0, 1.0])
+    assert HmsSubbasinTransfer.validate_transfer_map(artifact) == artifact
 
 
 def test_compile_is_deterministic_and_write_is_idempotent(tmp_path) -> None:

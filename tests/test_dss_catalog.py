@@ -1,5 +1,9 @@
 """Pure DSS catalog/query tests."""
 
+from datetime import datetime
+
+import pytest
+
 from hms_commander.dss.catalog import (
     create_pathname,
     filter_catalog,
@@ -8,7 +12,6 @@ from hms_commander.dss.catalog import (
     unique_elements,
 )
 from hms_commander.dss import DssCore, HmsDss
-
 
 CATALOG = [
     "//J1/FLOW//15MIN/RUN:RUN1/",
@@ -19,6 +22,16 @@ CATALOG = [
     "//SUB1/PRECIP-INC//15MIN/RUN:RUN1/",
     "/BASIN/STAGE_NODE/STAGE//15MIN/RUN:RUN1/",
 ]
+
+
+@pytest.mark.parametrize("year", [1899, 2016, 2263, 3000])
+def test_hec_minute_conversion_preserves_dates_beyond_nanosecond_range(year):
+    expected = datetime(year, 1, 2, 0, 5)
+    minutes = int((expected - datetime(1899, 12, 31)).total_seconds() // 60)
+    index = DssCore._hec_times_to_datetime_index([minutes, minutes + 5])
+    assert index[0].to_pydatetime() == expected
+    assert (index[1] - index[0]).total_seconds() == 300
+    assert DssCore._hec_time_to_datetime(minutes) == index[0]
 
 
 def test_parse_pathname_preserves_empty_a_part_and_d_part():
