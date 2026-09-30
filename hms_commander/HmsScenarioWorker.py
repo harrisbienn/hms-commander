@@ -54,6 +54,7 @@ class HmsScenarioWorker:
     """Static namespace for the HMS scenario-worker request/result contract."""
 
     REQUEST_SCHEMA = "hms-commander/scenario-worker-request/1.0"
+    CENTER_REQUEST_SCHEMA = "hms-commander/scenario-worker-request/1.1"
     RESULT_SCHEMA = "hms-commander/scenario-worker-result/1.0"
 
     @staticmethod
@@ -211,12 +212,16 @@ class HmsScenarioWorker:
                 transfer_config = request["spatial_transfer"]
                 try:
                     transfer_directory = product_directory / "spatial-transfer"
-                    if transfer_config.get("method") == HmsSubbasinTransfer.METHOD:
+                    if transfer_config.get("method") in HmsSubbasinTransfer.METHODS:
                         transfer_map = json.loads(
                             Path(transfer_config["transfer_map"]).read_text(
                                 encoding="utf-8"
                             )
                         )
+                        if transfer_map.get("method") != transfer_config["method"]:
+                            raise ValueError(
+                                "transfer-map method differs from worker request"
+                            )
                         transfer_manifest = (
                             HmsSubbasinTransfer.apply_transfer_map_to_dss(
                                 artifact.dss_file,
@@ -322,7 +327,7 @@ class HmsScenarioWorker:
                 }
                 evidence_key = (
                     "volume"
-                    if transfer_manifest["schema"] == HmsSubbasinTransfer.PRODUCT_SCHEMA
+                    if transfer_config.get("method") in HmsSubbasinTransfer.METHODS
                     else "metrics"
                 )
                 products["spatial_transfer"][evidence_key] = transfer_manifest[
@@ -442,7 +447,10 @@ class HmsScenarioWorker:
                 classification="invalid_request",
                 exit_code=2,
             )
-        if payload["schema"] != HmsScenarioWorker.REQUEST_SCHEMA:
+        if payload["schema"] not in {
+            HmsScenarioWorker.REQUEST_SCHEMA,
+            HmsScenarioWorker.CENTER_REQUEST_SCHEMA,
+        }:
             raise HmsScenarioWorkerError(
                 f"Unsupported HMS worker request schema: {payload['schema']!r}",
                 classification="invalid_request",
@@ -592,7 +600,16 @@ class HmsScenarioWorker:
         normalized_transfer = None
         if payload.get("spatial_transfer") is not None:
             transfer = _object(payload["spatial_transfer"], "spatial_transfer")
-            if transfer.get("method") == HmsSubbasinTransfer.METHOD:
+            if (
+                transfer.get("method") == HmsSubbasinTransfer.CENTER_METHOD
+                and payload["schema"] != HmsScenarioWorker.CENTER_REQUEST_SCHEMA
+            ):
+                raise HmsScenarioWorkerError(
+                    "center-selected transfer requires request 1.1",
+                    classification="invalid_request",
+                    exit_code=2,
+                )
+            if transfer.get("method") in HmsSubbasinTransfer.METHODS:
                 normalized_transfer = HmsScenarioWorker._subbasin_transfer_request(
                     transfer
                 )
@@ -707,7 +724,7 @@ class HmsScenarioWorker:
             )
 
         normalized_request = {
-            "schema": HmsScenarioWorker.REQUEST_SCHEMA,
+            "schema": payload["schema"],
             "scenario": {
                 "scenario_id": scenario_id,
                 "specification_sha256": specification_sha256,
@@ -862,7 +879,7 @@ class HmsScenarioWorker:
             label="spatial_transfer",
         )
         _require_qualification_only(transfer)
-        if transfer["method"] != HmsSubbasinTransfer.METHOD:
+        if transfer["method"] not in HmsSubbasinTransfer.METHODS:
             raise HmsScenarioWorkerError(
                 "spatial_transfer.method is unsupported",
                 classification="invalid_request",
@@ -886,7 +903,7 @@ class HmsScenarioWorker:
             label="spatial_transfer.volume_tolerance",
         )
         return {
-            "method": HmsSubbasinTransfer.METHOD,
+            "method": transfer["method"],
             "transfer_map": str(
                 Path(
                     _nonempty_string(
@@ -968,7 +985,7 @@ class HmsScenarioWorker:
 
         transfer = request.get("spatial_transfer")
         if transfer is not None:
-            if transfer.get("method") == HmsSubbasinTransfer.METHOD:
+            if transfer.get("method") in HmsSubbasinTransfer.METHODS:
                 transfer_inputs = (
                     (
                         Path(transfer["transfer_map"]),
