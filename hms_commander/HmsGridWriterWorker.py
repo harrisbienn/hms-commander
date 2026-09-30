@@ -149,8 +149,14 @@ def run(request_path: str | Path, result_path: str | Path) -> int:
 
             catalog = RasDss.get_catalog(output)
             catalog_paths = set(catalog["pathname"].astype(str))
-            if any(pathname not in catalog_paths for pathname in written):
-                raise RuntimeError("Grid-writer readback catalog is incomplete")
+            missing = [
+                pathname for pathname in written if pathname not in catalog_paths
+            ]
+            if missing:
+                raise RuntimeError(
+                    f"Grid-writer readback catalog is incomplete: {len(catalog_paths)} catalog records, "
+                    f"{len(written)} written, {len(missing)} missing; first missing={missing[0]!r}"
+                )
             weighted_depth_area = {support_id: [] for support_id in support_ids}
             maximum_difference = 0.0
             for index, pathname in enumerate(written):

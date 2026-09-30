@@ -47,3 +47,7 @@ the prototype's timestamp shift or implicit grid-origin handling.
     options:
       show_source: false
       heading_level: 2
+
+## Multiple receiving areas
+
+A center-selected RAS application-area 3.0 produces transfer-map 3.0 with explicit `model.two_d_flow_areas`. Selection and full-cell scaling are unchanged. Areas share one attribution grid and one denominator per subbasin; do not sum independently scaled maps. Single-area inputs retain transfer-map 2.0. Audit/product 2.0 and worker request 1.1 remain unchanged because they authenticate the map by hash.

@@ -221,6 +221,30 @@ def _validated_target_grid(value: Any) -> dict[str, Any]:
     return dict(value)
 
 
+def _validated_ras_model(model: Any, *, multi_area: bool) -> None:
+    _required_mapping(
+        model,
+        {
+            "project_id",
+            "plan_id",
+            "geometry_id",
+            "two_d_flow_areas" if multi_area else "two_d_flow_area",
+        },
+        label="RAS application-area model",
+    )
+    for key, value in model.items():
+        if key == "two_d_flow_areas":
+            if (
+                not isinstance(value, list)
+                or not value
+                or any(not isinstance(name, str) or not name.strip() for name in value)
+                or value != sorted(set(value))
+            ):
+                raise ValueError("two_d_flow_areas must be uniquely sorted names")
+        else:
+            _non_empty(value, label=f"RAS application-area model.{key}")
+
+
 def _validated_application_area(value: Any) -> dict[str, Any]:
     try:
         normalized = json.loads(json.dumps(value, sort_keys=True, allow_nan=False))
@@ -231,10 +255,17 @@ def _validated_application_area(value: Any) -> dict[str, Any]:
     center_selected = (
         normalized.get("method") == "ras-mesh-center-selected-full-cell-area"
     )
+    multi_area = (
+        normalized.get("schema") == "ras-commander/precipitation-application-area/3.0"
+    )
     expected_schema = (
-        "ras-commander/precipitation-application-area/2.0"
-        if center_selected
-        else "ras-commander/precipitation-application-area/1.0"
+        "ras-commander/precipitation-application-area/3.0"
+        if multi_area and center_selected
+        else (
+            "ras-commander/precipitation-application-area/2.0"
+            if center_selected
+            else "ras-commander/precipitation-application-area/1.0"
+        )
     )
     if normalized.get("schema") != expected_schema:
         raise ValueError("RAS application-area schema is unsupported")
@@ -256,13 +287,7 @@ def _validated_application_area(value: Any) -> dict[str, Any]:
     ):
         raise ValueError("RAS center-selected application-area rule is unsupported")
 
-    _required_mapping(
-        normalized.get("model"),
-        {"project_id", "plan_id", "geometry_id", "two_d_flow_area"},
-        label="RAS application-area model",
-    )
-    for key, model_value in normalized["model"].items():
-        _non_empty(model_value, label=f"RAS application-area model.{key}")
+    _validated_ras_model(normalized.get("model"), multi_area=multi_area)
 
     grid = _validated_target_grid(normalized.get("target_grid"))
     rows, columns = grid["shape"]
@@ -506,7 +531,8 @@ class HmsSubbasinTransfer:
             source_area_column: Column containing positive source areas.
             source_area_units_column: Column containing explicit area units.
             method: Versioned attribution and area-scaling rule. The center
-                method requires a RAS center-selected application-area 2.0.
+                method requires center-selected application-area 2.0 (one area)
+                or 3.0 (multiple named areas).
 
         Returns:
             Validated JSON-serializable transfer-map artifact.
@@ -713,9 +739,14 @@ class HmsSubbasinTransfer:
         )
         artifact: dict[str, Any] = {
             "schema": (
-                "hms-commander/subbasin-volume-transfer-map/2.0"
-                if center_selected
-                else HmsSubbasinTransfer.SCHEMA
+                "hms-commander/subbasin-volume-transfer-map/3.0"
+                if normalized_application["schema"]
+                == "ras-commander/precipitation-application-area/3.0"
+                else (
+                    "hms-commander/subbasin-volume-transfer-map/2.0"
+                    if center_selected
+                    else HmsSubbasinTransfer.SCHEMA
+                )
             ),
             "method": method,
             "algorithm": (
@@ -820,9 +851,16 @@ class HmsSubbasinTransfer:
                 HmsSubbasinTransfer.AREA_PRECISION_DECIMAL_PLACES
             ),
         }
+        multi_area = (
+            normalized["schema"] == "hms-commander/subbasin-volume-transfer-map/3.0"
+        )
         if center_selected:
             expected_constants.update(
-                schema="hms-commander/subbasin-volume-transfer-map/2.0",
+                schema=(
+                    "hms-commander/subbasin-volume-transfer-map/3.0"
+                    if multi_area
+                    else "hms-commander/subbasin-volume-transfer-map/2.0"
+                ),
                 method=HmsSubbasinTransfer.CENTER_METHOD,
                 algorithm=HmsSubbasinTransfer.CENTER_ALGORITHM,
                 assignment_predicate="target-center-within-subbasin",
@@ -851,9 +889,13 @@ class HmsSubbasinTransfer:
             label="ras_application_area",
         )
         if ras_application["schema"] != (
-            "ras-commander/precipitation-application-area/2.0"
-            if center_selected
-            else "ras-commander/precipitation-application-area/1.0"
+            "ras-commander/precipitation-application-area/3.0"
+            if multi_area and center_selected
+            else (
+                "ras-commander/precipitation-application-area/2.0"
+                if center_selected
+                else "ras-commander/precipitation-application-area/1.0"
+            )
         ) or ras_application["method"] != (
             "ras-mesh-center-selected-full-cell-area"
             if center_selected
@@ -862,13 +904,7 @@ class HmsSubbasinTransfer:
             raise ValueError("ras_application_area identity is unsupported")
         if not _SHA256_PATTERN.fullmatch(ras_application["application_area_sha256"]):
             raise ValueError("ras_application_area hash is invalid")
-        _required_mapping(
-            ras_application["model"],
-            {"project_id", "plan_id", "geometry_id", "two_d_flow_area"},
-            label="ras_application_area.model",
-        )
-        for key, value in ras_application["model"].items():
-            _non_empty(value, label=f"ras_application_area.model.{key}")
+        _validated_ras_model(ras_application["model"], multi_area=multi_area)
 
         grid = _validated_target_grid(normalized["target_grid"])
         normalized["target_grid"] = grid

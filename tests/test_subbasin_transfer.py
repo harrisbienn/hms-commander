@@ -154,7 +154,10 @@ def _compile(
     )
 
 
-def test_center_method_matches_strict_subbasin_selection_and_polygon_area() -> None:
+@pytest.mark.parametrize("multi_area", [False, True])
+def test_center_method_matches_strict_subbasin_selection_and_polygon_area(
+    multi_area,
+) -> None:
     from ras_commander.precip import PrecipitationApplicationArea
 
     mesh = gpd.GeoDataFrame(
@@ -164,7 +167,7 @@ def test_center_method_matches_strict_subbasin_selection_and_polygon_area() -> N
     )
     area = PrecipitationApplicationArea.compile_from_mesh_cells(
         mesh,
-        "Area",
+        ["Area"] if multi_area else "Area",
         _target_grid(),
         project_id="ras",
         plan_id="p01",
@@ -188,7 +191,8 @@ def test_center_method_matches_strict_subbasin_selection_and_polygon_area() -> N
         _hms_model(),
         method=HmsSubbasinTransfer.CENTER_METHOD,
     )
-    assert artifact["schema"] == "hms-commander/subbasin-volume-transfer-map/2.0"
+    version = "3.0" if multi_area else "2.0"
+    assert artifact["schema"] == f"hms-commander/subbasin-volume-transfer-map/{version}"
     assert artifact["area_basis"] == "selected-full-grid-cells"
     assert [c["subbasin"] for c in artifact["cells"]] == [
         "A",
@@ -211,7 +215,7 @@ def test_center_method_matches_strict_subbasin_selection_and_polygon_area() -> N
         HmsSubbasinTransfer.compile_transfer_map(subs, area, ["A", "B"], _hms_model())
     schema = json.loads(
         files("hms_commander")
-        .joinpath("contracts/subbasin-volume-transfer-map-v2.0.schema.json")
+        .joinpath(f"contracts/subbasin-volume-transfer-map-v{version}.schema.json")
         .read_text()
     )
     pytest.importorskip("jsonschema").validate(artifact, schema)
