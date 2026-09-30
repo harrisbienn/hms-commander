@@ -109,3 +109,16 @@ with a stable `error.classification` and `retryable` flag.
 The worker never evaluates the engineering hydrologic-handoff gate. It exports
 mechanical facts through `HmsResultsProducts`; the owning study applies its
 versioned policy later.
+
+## External gage bindings
+
+`gage_inputs` stages authenticated DSS assets in the scenario clone and binds
+each named gage as `External DSS`. For a manual-entry gage, preparation removes
+historical start/end limits and retains the variant structure required by HMS 4.9, preserving
+gage-level units, type, description, and location metadata. Ambiguous multiple
+variants are rejected. The source project remains unchanged.
+
+For synthetic clocks, supply gage series that cover the complete model window,
+including both endpoints for instantaneous flow. Rebinding does not shift or
+invent DSS values. `HmsGage.bind_external_dss()` exposes the same operation for
+package preparation; `update_gage()` remains a reference-only edit.

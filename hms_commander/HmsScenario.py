@@ -542,7 +542,7 @@ class HmsScenario:
             relative = HmsScenario._windows_relative_path(
                 destination.relative_to(workspace)
             )
-            HmsGage.update_gage(
+            HmsGage.bind_external_dss(
                 gage_file,
                 gage_name,
                 dss_file=relative,
@@ -557,7 +557,11 @@ class HmsScenario:
                 "Pathname",
                 updated.get("DSS Pathname", ""),
             )
-            if updated_file != relative or updated_pathname != pathname:
+            if (
+                updated_file != relative
+                or updated_pathname != pathname
+                or updated.get("Data Source Type") != "External DSS"
+            ):
                 raise ValueError(
                     f"Gage input override did not round trip for {gage_name!r}"
                 )

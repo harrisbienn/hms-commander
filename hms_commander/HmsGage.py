@@ -315,6 +315,80 @@ Gage: {name}
 
     @staticmethod
     @log_call
+    def bind_external_dss(
+        gage_path: Union[str, Path],
+        gage_name: str,
+        dss_file: Union[str, Path],
+        pathname: str,
+    ) -> None:
+        """Bind one gage to an external DSS series, replacing manual storage.
+
+        A manual gage's variant contains its editable storage reference and
+        historical time limits. Replace its storage reference and remove the
+        historical limits, retaining the variant structure required by HMS 4.9.
+        Flat external gages retain their Filename/Pathname style. Refuse
+        multiple variants rather than
+        choosing one implicitly. DSS content/coverage validation belongs to
+        the calling worker.
+
+        Args:
+            gage_path: Gage file in a prepared project or scenario clone.
+            gage_name: Exact, unique gage name.
+            dss_file: External DSS reference relative to the project, or absolute.
+            pathname: Six-part external time-series pathname.
+
+        Raises:
+            ValueError: The gage, variant, or DSS reference is ambiguous or invalid.
+        """
+        from .HmsGrid import HmsGrid
+
+        HmsGrid._validate_dss_pathname(pathname)
+        if len(pathname.split("/")) != 8 or any(c in pathname for c in "\r\n"):
+            raise ValueError("pathname must be a single-line six-part DSS pathname")
+        filename = str(dss_file)
+        if not filename.strip() or any(c in filename for c in "\r\n"):
+            raise ValueError("dss_file must be a nonempty single-line path")
+        content = HmsGage._read_gage_file(Path(gage_path))
+        matches = [
+            match
+            for match, name, _ in HmsFileParser.find_all_blocks(content, "Gage")
+            if name == gage_name
+        ]
+        if len(matches) != 1:
+            raise ValueError(f"Expected one gage named {gage_name!r}")
+        match = matches[0]
+        body = match.group(3)
+        variants = re.findall(r"^\s*Variant:\s*(.+)$", body, re.MULTILINE)
+        if len(variants) > 1:
+            raise ValueError(f"Gage {gage_name!r} has ambiguous multiple variants")
+        if variants:
+            variant = re.escape(variants[0].strip())
+            complete = re.findall(
+                rf"^\s*Variant:\s*{variant}\s*\n.*?"
+                rf"^\s*End Variant:\s*{variant}[^\S\n]*\n",
+                body,
+                flags=re.MULTILINE | re.DOTALL,
+            )
+            if len(complete) != 1:
+                raise ValueError(f"Gage {gage_name!r} has a malformed variant")
+        for names, value in (
+            (("Filename", "DSS File Name", "DSS File"), filename),
+            (("Pathname", "DSS Pathname"), pathname),
+            (("Data Source Type",), "External DSS"),
+        ):
+            body = HmsGage._update_existing_param(body, names, value, gage_name)
+        body = "".join(
+            line
+            for line in body.splitlines(keepends=True)
+            if line.strip().split(":", 1)[0] not in ("Start Time", "End Time")
+        )
+        updated = match.group(1) + body + match.group(4)
+        HmsFileParser.write_file(
+            gage_path, content[: match.start()] + updated + content[match.end() :]
+        )
+
+    @staticmethod
+    @log_call
     def delete_gage(
         gage_path: Union[str, Path],
         gage_name: str,
