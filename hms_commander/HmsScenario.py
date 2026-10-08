@@ -134,6 +134,7 @@ class HmsScenario:
         include_generated_outputs: bool = False,
         overwrite: bool = False,
         hms_exe_path: Optional[Union[str, Path]] = None,
+        run_name_policy: str = "scenario",
     ) -> HmsScenarioWorkspace:
         """Clone and configure an immutable HMS template for one scenario.
 
@@ -141,12 +142,20 @@ class HmsScenario:
         project's local/model time zone.  Time-zone conversion belongs in the
         calling orchestrator, where the scenario contract is available.
 
+        ``run_name_policy="preserve-source"`` retains the selected run name
+        inside the isolated clone so its DSS F-part remains compatible with
+        source-run selectors. Prepared met/control/grid names and output paths
+        remain scenario-specific. The default ``"scenario"`` creates a new run
+        as before. Neither policy changes the original project.
+
         By default, the clone excludes root-level HMS computation artifacts
         and the root ``results`` directory. Root-level DSS files referenced by
         HMS input configuration and required model inputs in nested folders
         remain part of the clone. Set ``include_generated_outputs=True`` only
         when historical results are intentionally needed in the workspace.
         """
+        if run_name_policy not in {"scenario", "preserve-source"}:
+            raise ValueError("run_name_policy must be 'scenario' or 'preserve-source'")
         source_folder = HmsScenario._resolve_project_folder(source_project)
         forcing_source = Path(precipitation_dss).resolve()
         workspace_path = Path(workspace).resolve()
@@ -200,7 +209,7 @@ class HmsScenario:
 
         met_name = f"FF_{slug}_Met"
         control_name = f"FF_{slug}_Control"
-        run_name = f"FF_{slug}"
+        run_name = source_run if run_name_policy == "preserve-source" else f"FF_{slug}"
         grid_name = f"FF_{slug}_Precip"
 
         forcing_dir = workspace_path / "forcing"
@@ -252,15 +261,39 @@ class HmsScenario:
         output_dir = workspace_path / "output"
         output_dir.mkdir(parents=True, exist_ok=True)
         output_reference = rf"output\{slug}_hms.dss"
-        HmsRun.clone_run(
-            source_run,
-            run_name,
-            new_met=met_name,
-            new_control=control_name,
-            output_dss=output_reference,
-            description=f"FloodForecast scenario {scenario_id}",
-            hms_object=project,
-        )
+        if run_name_policy == "preserve-source":
+            # Isolation is supplied by the project clone and unique output
+            # destination, so downstream selectors can retain the source name.
+            project.initialize(project.project_folder, hms_exe_path=hms_exe_path)
+            HmsRun.set_precip(run_name, met_name, hms_object=project)
+            HmsRun.set_control(run_name, control_name, hms_object=project)
+            HmsRun.set_dss_file(run_name, output_reference, hms_object=project)
+            HmsRun.set_log_file(run_name, f"{slug}_hms.log", hms_object=project)
+            config = HmsRun.get_dss_config(run_name, hms_object=project)
+            run_file = Path(config["run_file"])
+            content = HmsFileParser.read_file(run_file)
+            match, _, body, _ = HmsFileParser.find_block(content, "Run", run_name)
+            if match is None:
+                raise ValueError(f"Prepared run {run_name!r} was not found")
+            body = "".join(
+                line
+                for line in body.splitlines(keepends=True)
+                if line.strip().partition(":")[0]
+                not in {"Last Execution Date", "Last Execution Time"}
+            )
+            HmsFileParser.write_file(
+                run_file, HmsFileParser.replace_block(content, match, body)
+            )
+        else:
+            HmsRun.clone_run(
+                source_run,
+                run_name,
+                new_met=met_name,
+                new_control=control_name,
+                output_dss=output_reference,
+                description=f"FloodForecast scenario {scenario_id}",
+                hms_object=project,
+            )
         project.initialize(project.project_folder, hms_exe_path=hms_exe_path)
 
         project_file = project.project_file
@@ -281,9 +314,7 @@ class HmsScenario:
             output_dss=output_dir / f"{slug}_hms.dss",
             log_file=workspace_path / f"{slug}_hms.log",
             clone_policy=(
-                "full-project-copy"
-                if include_generated_outputs
-                else "input-only"
+                "full-project-copy" if include_generated_outputs else "input-only"
             ),
             gage_inputs=staged_gage_inputs,
         )
@@ -305,7 +336,8 @@ class HmsScenario:
             "control_matches": config.get("control_name") == workspace.control_name,
             "output_matches": HmsScenario._normalize_hms_path(
                 str(config.get("dss_file", ""))
-            ) == HmsScenario._normalize_hms_path(
+            )
+            == HmsScenario._normalize_hms_path(
                 str(workspace.output_dss.relative_to(workspace.project_folder))
             ),
         }
@@ -428,21 +460,18 @@ class HmsScenario:
                 errors="replace",
             )
         completion_marker = re.search(
-            rf'^NOTE 15302:\s+Finished computing simulation run '
+            rf"^NOTE 15302:\s+Finished computing simulation run "
             rf'"{re.escape(workspace.run_name)}"',
             log_text,
             flags=re.MULTILINE,
         )
         abort_marker = re.search(
-            rf'^WARNING 15303:\s+Aborted run '
-            rf'"{re.escape(workspace.run_name)}"',
+            rf"^WARNING 15303:\s+Aborted run " rf'"{re.escape(workspace.run_name)}"',
             log_text,
             flags=re.MULTILINE,
         )
         error_count = sum(
-            1
-            for line in log_text.splitlines()
-            if line.lstrip().startswith("ERROR")
+            1 for line in log_text.splitlines() if line.lstrip().startswith("ERROR")
         )
         completed = completion_marker is not None
         aborted = abort_marker is not None
@@ -587,7 +616,9 @@ class HmsScenario:
     def _validate_copy_boundaries(source: Path, destination: Path) -> None:
         source = source.resolve()
         destination = destination.resolve()
-        if source == destination or source in destination.parents or destination in source.parents:
-            raise ValueError(
-                "Source project and scenario workspace must not overlap"
-            )
+        if (
+            source == destination
+            or source in destination.parents
+            or destination in source.parents
+        ):
+            raise ValueError("Source project and scenario workspace must not overlap")

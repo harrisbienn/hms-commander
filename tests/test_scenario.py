@@ -133,16 +133,17 @@ End:
     return folder
 
 
-def test_prepare_workspace_clones_and_rewires_without_mutating_source(tmp_path):
+@pytest.mark.parametrize("run_name_policy", ["scenario", "preserve-source"])
+def test_prepare_workspace_clones_and_rewires_without_mutating_source(
+    tmp_path, run_name_policy
+):
     source = _write_project(tmp_path / "source")
     forcing = tmp_path / "rank001.dss"
     forcing.write_bytes(b"not-a-real-dss")
     gage_input = tmp_path / "qualification-gages.dss"
     gage_input.write_bytes(b"not-a-real-gage-dss")
     original_files = {
-        path.name: path.read_bytes()
-        for path in source.iterdir()
-        if path.is_file()
+        path.name: path.read_bytes() for path in source.iterdir() if path.is_file()
     }
 
     prepared = HmsScenario.prepare_workspace(
@@ -163,6 +164,7 @@ def test_prepare_workspace_clones_and_rewires_without_mutating_source(tmp_path):
             }
         ],
         time_interval_minutes=5,
+        run_name_policy=run_name_policy,
     )
 
     assert prepared.project_file.is_file()
@@ -198,9 +200,9 @@ def test_prepare_workspace_clones_and_rewires_without_mutating_source(tmp_path):
         encoding="utf-8"
     )
     grid = (prepared.project_folder / "Example.grid").read_text(encoding="utf-8")
-    control = (
-        prepared.project_folder / f"{prepared.control_name}.control"
-    ).read_text(encoding="utf-8")
+    control = (prepared.project_folder / f"{prepared.control_name}.control").read_text(
+        encoding="utf-8"
+    )
     run = (prepared.project_folder / "Example.run").read_text(encoding="utf-8")
     gage = (prepared.project_folder / "Example.gage").read_text(encoding="utf-8")
 
@@ -216,11 +218,20 @@ def test_prepare_workspace_clones_and_rewires_without_mutating_source(tmp_path):
     cloned_run_block = run.split(f"Run: {prepared.run_name}", maxsplit=1)[1]
     assert "Last Execution Date:" not in cloned_run_block
     assert "Last Execution Time:" not in cloned_run_block
-    assert "Last Execution Date: 2 January 2020" in run
+    assert ("Last Execution Date: 2 January 2020" in run) == (
+        run_name_policy == "scenario"
+    )
+    assert prepared.run_name == (
+        "BaselineRun" if run_name_policy == "preserve-source" else "FF_lwi-r3-rank-001"
+    )
+    assert (
+        prepared.project_folder / "BaselineBasin.basin"
+    ).read_bytes() == original_files["BaselineBasin.basin"]
+    assert f"Precip: {prepared.met_name}" in cloned_run_block
+    assert f"Control: {prepared.control_name}" in cloned_run_block
+    assert f"Log File: {prepared.log_file.name}" in cloned_run_block
     assert {
-        path.name: path.read_bytes()
-        for path in source.iterdir()
-        if path.is_file()
+        path.name: path.read_bytes() for path in source.iterdir() if path.is_file()
     } == original_files
 
 

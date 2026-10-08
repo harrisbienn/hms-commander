@@ -85,6 +85,12 @@ def _install_success_fakes(monkeypatch, request: dict) -> dict[str, int]:
 
     def prepare(*_args, **_kwargs):
         calls["prepare"] += 1
+        if request["schema"] == HmsScenarioWorker.SOURCE_RUN_REQUEST_SCHEMA:
+            assert _kwargs["run_name_policy"] == "preserve-source"
+            run_name = request["source_model"]["run"]
+        else:
+            assert "run_name_policy" not in _kwargs
+            run_name = "FF_lwi-r3-rank-001"
         workspace_path = Path(request["workspace"])
         workspace_path.mkdir()
         output = workspace_path / "output" / "lwi-r3-rank-001_hms.dss"
@@ -94,7 +100,7 @@ def _install_success_fakes(monkeypatch, request: dict) -> dict[str, int]:
         project_file.write_text("Project: Example\nEnd:\n", encoding="utf-8")
         log_file = workspace_path / "lwi-r3-rank-001_hms.log"
         log_file.write_text(
-            'NOTE 15302: Finished computing simulation run "FF_lwi-r3-rank-001"\n',
+            f'NOTE 15302: Finished computing simulation run "{run_name}"\n',
             encoding="utf-8",
         )
         if request.get("spatial_transfer") is not None:
@@ -114,7 +120,7 @@ def _install_success_fakes(monkeypatch, request: dict) -> dict[str, int]:
             source_project=Path(request["source_model"]["project"]),
             project_folder=workspace_path,
             project_file=project_file,
-            run_name="FF_lwi-r3-rank-001",
+            run_name=run_name,
             met_name="FF_lwi-r3-rank-001_Met",
             control_name="FF_lwi-r3-rank-001_Control",
             grid_name="FF_lwi-r3-rank-001_Precip",
@@ -145,7 +151,10 @@ def _install_success_fakes(monkeypatch, request: dict) -> dict[str, int]:
     def export(dss_file, mappings, output_directory, **_kwargs):
         calls["export"] += 1
         assert Path(dss_file).is_file()
-        assert mappings[0]["pathname"] == FLOW_PATH
+        assert (
+            mappings[0]["pathname"]
+            == request["products"]["required_pathnames"][0]["pathname"]
+        )
         output = Path(output_directory)
         output.mkdir()
         qualification = {
@@ -190,6 +199,9 @@ def _install_success_fakes(monkeypatch, request: dict) -> dict[str, int]:
         worker_module.HmsResultsProducts,
         "export",
         staticmethod(export),
+    )
+    monkeypatch.setattr(
+        worker_module.HmsResultsProducts, "export_isolated", staticmethod(export)
     )
     if request.get("spatial_transfer") is not None:
         calls["transfer"] = 0
@@ -249,7 +261,11 @@ def _install_success_fakes(monkeypatch, request: dict) -> dict[str, int]:
                         "aggregate": {"within_tolerance": True},
                     },
                 }
-                assert kwargs["source_run_name"] == "FF_lwi-r3-rank-001"
+                assert kwargs["source_run_name"] == (
+                    request["source_model"]["run"]
+                    if request["schema"] == HmsScenarioWorker.SOURCE_RUN_REQUEST_SCHEMA
+                    else "FF_lwi-r3-rank-001"
+                )
                 manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
                 return manifest
 
@@ -432,11 +448,13 @@ def test_worker_rejects_spatial_transfer_identity_drift(tmp_path):
 
 @pytest.mark.parametrize("method", sorted(SUBBASIN_PRODUCT_METHODS))
 @pytest.mark.parametrize("wrong_allocation", [False, True])
+@pytest.mark.parametrize("preserve_source", [False, True])
 def test_worker_exports_authenticated_subbasin_volume_transfer(
     tmp_path,
     monkeypatch,
     method,
     wrong_allocation,
+    preserve_source,
 ):
     request, request_path, result_path = _request(tmp_path)
     transfer_map = tmp_path / "subbasin-volume-transfer-map.json"
@@ -488,6 +506,12 @@ def test_worker_exports_authenticated_subbasin_volume_transfer(
         )["spatial_transfer"]["method"]
         == method
     )
+    if preserve_source:
+        request["schema"] = HmsScenarioWorker.SOURCE_RUN_REQUEST_SCHEMA
+        request["source_model"]["run_name_policy"] = "preserve-source"
+        request["products"]["required_pathnames"][0][
+            "pathname"
+        ] = "//OUTLET/FLOW//5Minute/RUN:BASELINERUN/"
     request_path.write_text(json.dumps(request), encoding="utf-8")
     calls = _install_success_fakes(monkeypatch, request)
 
@@ -682,6 +706,105 @@ def test_packaged_worker_schemas_match_public_contract_constants():
         )
     )
     assert delivered["$id"] == HmsScenarioWorker.DELIVERED_REQUEST_SCHEMA
+    preserved = json.loads(
+        (package / "scenario-worker-request-v1.3.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert preserved["$id"] == HmsScenarioWorker.SOURCE_RUN_REQUEST_SCHEMA
+    assert preserved["properties"]["source_model"]["properties"]["run_name_policy"] == {
+        "const": "preserve-source"
+    }
+
+
+def test_worker_preserves_source_run_for_extraction_and_resume(tmp_path, monkeypatch):
+    request, request_path, result_path = _request(tmp_path)
+    request["schema"] = HmsScenarioWorker.SOURCE_RUN_REQUEST_SCHEMA
+    request["source_model"]["run_name_policy"] = "preserve-source"
+    mapping = request["products"]["required_pathnames"][0]
+    mapping["pathname"] = "//OUTLET/FLOW//5Minute/RUN:BASELINERUN/"
+    # Two boundaries may intentionally consume the same HMS series.
+    request["products"]["required_pathnames"].append(
+        dict(mapping, mapping_id="split-right")
+    )
+    request_path.write_text(json.dumps(request), encoding="utf-8")
+    calls = _install_success_fakes(monkeypatch, request)
+    assert HmsScenarioWorker.run(request_path, result_path) == 0
+    result = json.loads(result_path.read_text())
+    assert result["preparation"]["run_identity"] == {
+        "policy": "preserve-source",
+        "source_run": "BaselineRun",
+        "prepared_run": "BaselineRun",
+    }
+    assert result["execution"]["run_name"] == "BaselineRun"
+    assert HmsScenarioWorker.run(request_path, result_path) == 0
+    assert calls == {"prepare": 1, "execute": 1, "export": 1}
+
+
+@pytest.mark.parametrize(
+    "selector",
+    [
+        "//OUTLET/FLOW//5Minute/RUN:OTHER/",
+        "//OUTLET/FLOW//5Minute/RUN:*/",
+        "//OUTLET/FLOW//5Minute//",
+        "not-a-pathname",
+    ],
+)
+def test_preserved_worker_rejects_wrong_or_ambiguous_run_before_preparation(
+    tmp_path, selector
+):
+    request, request_path, result_path = _request(tmp_path)
+    request["schema"] = HmsScenarioWorker.SOURCE_RUN_REQUEST_SCHEMA
+    request["source_model"]["run_name_policy"] = "preserve-source"
+    request["products"]["required_pathnames"][0]["pathname"] = selector
+    request_path.write_text(json.dumps(request))
+    assert HmsScenarioWorker.run(request_path, result_path) == 2
+    result = json.loads(result_path.read_text())
+    assert "exact preserved source run" in result["error"]["message"]
+    assert not Path(request["workspace"]).exists()
+
+
+@pytest.mark.parametrize("schema", ["1.0", "1.1", "1.2", "1.3"])
+def test_worker_run_policy_requires_new_schema_and_explicit_value(tmp_path, schema):
+    request, _, _ = _request(tmp_path)
+    request["schema"] = f"hms-commander/scenario-worker-request/{schema}"
+    request["source_model"]["run_name_policy"] = "scenario"
+    with pytest.raises(HmsScenarioWorkerError):
+        HmsScenarioWorker._validate_request(request)
+    if schema == "1.3":
+        request["source_model"].pop("run_name_policy")
+        with pytest.raises(HmsScenarioWorkerError, match="run_name_policy"):
+            HmsScenarioWorker._validate_request(request)
+
+
+def test_worker_rejects_unpreserved_preparation_before_compute(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    request, request_path, result_path = _request(tmp_path)
+    request["schema"] = HmsScenarioWorker.SOURCE_RUN_REQUEST_SCHEMA
+    request["source_model"]["run_name_policy"] = "preserve-source"
+    request["products"]["required_pathnames"][0][
+        "pathname"
+    ] = "//OUTLET/FLOW//5Minute/RUN:BASELINERUN/"
+    request_path.write_text(json.dumps(request))
+    calls = _install_success_fakes(monkeypatch, request)
+    worker_module = importlib.import_module("hms_commander.HmsScenarioWorker")
+    prepare = worker_module.HmsScenario.prepare_workspace
+    monkeypatch.setattr(
+        worker_module.HmsScenario,
+        "prepare_workspace",
+        staticmethod(
+            lambda *args, **kwargs: replace(
+                prepare(*args, **kwargs), run_name="WrongRun"
+            )
+        ),
+    )
+    assert HmsScenarioWorker.run(request_path, result_path) == 3
+    assert calls == {"prepare": 1, "execute": 0, "export": 0}
+    assert (
+        json.loads(result_path.read_text())["error"]["classification"]
+        == "preparation_failed"
+    )
 
 
 def test_jython_can_propagate_a_subprocess_timeout(tmp_path, monkeypatch):

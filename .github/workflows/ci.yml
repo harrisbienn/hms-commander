@@ -41,7 +41,7 @@ jobs:
           tests/test_constants.py tests/test_parsing.py tests/test_jython_script_security.py
           tests/test_hms_examples.py tests/test_scenario.py tests/test_scenario_worker.py
           tests/test_timeseries_worker.py tests/test_handoff_worker.py
-          tests/test_results_products.py
+          tests/test_results_products.py tests/test_boundary_transformer.py
           -m "not requires_hms and not local_hms and not requires_java and not requires_gis and not requires_network and not slow"
       - run: python -m pip freeze --all
   docs:

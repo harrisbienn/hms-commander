@@ -27,7 +27,7 @@ Example:
 """
 
 import re
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Dict, List, Any, Optional, Union
 
 from .LoggingConfig import log_call, get_logger
@@ -193,17 +193,17 @@ class HmsRun:
             # Replace DSS File line
             dss_pattern = r'(\s+DSS File:\s*)([^\n]*)'
             if re.search(dss_pattern, body):
-                body = re.sub(dss_pattern, rf'\g<1>{dss_file}', body)
+                body = re.sub(dss_pattern, lambda item: item.group(1) + dss_file, body)
             else:
                 # Add DSS File line if not present
                 body = body.rstrip() + f'\n     DSS File: {dss_file}\n'
 
             # Optionally update log file to match
             if update_log_file:
-                log_name = Path(dss_file).stem + '.log'
+                log_name = PureWindowsPath(dss_file).stem + '.log'
                 log_pattern = r'(\s+Log File:\s*)([^\n]*)'
                 if re.search(log_pattern, body):
-                    body = re.sub(log_pattern, rf'\g<1>{log_name}', body)
+                    body = re.sub(log_pattern, lambda item: item.group(1) + log_name, body)
 
             return header + body + footer
 
@@ -536,7 +536,7 @@ class HmsRun:
             )
 
         # Update log file
-        log_name = Path(output_dss).stem + '.log'
+        log_name = PureWindowsPath(output_dss).stem + '.log'
         if re.search(r'\s+Log File:', new_block):
             new_block = re.sub(
                 r'(\s+Log File:\s*)([^\n]*)',
@@ -637,7 +637,7 @@ class HmsRun:
             # Replace DSS File line
             dss_pattern = r'(\s+DSS File:\s*)([^\n]*)'
             if re.search(dss_pattern, body):
-                body = re.sub(dss_pattern, rf'\g<1>{dss_file}', body)
+                body = re.sub(dss_pattern, lambda item: item.group(1) + dss_file, body)
             else:
                 # Add DSS File line if not present (after Log File if exists)
                 log_match = re.search(r'(\s+Log File:[^\n]*\n)', body)
@@ -650,10 +650,10 @@ class HmsRun:
 
             # Optionally update log file to match
             if update_log_file:
-                log_name = Path(dss_file).stem + '.log'
+                log_name = PureWindowsPath(dss_file).stem + '.log'
                 log_pattern = r'(\s+Log File:\s*)([^\n]*)'
                 if re.search(log_pattern, body):
-                    body = re.sub(log_pattern, rf'\g<1>{log_name}', body)
+                    body = re.sub(log_pattern, lambda item: item.group(1) + log_name, body)
 
             return header + body + footer
 

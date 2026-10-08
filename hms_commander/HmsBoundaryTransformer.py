@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 import subprocess
 import sys
 import tempfile
@@ -67,8 +68,27 @@ def _parts(pathname: str) -> tuple[str, ...]:
 
 
 def _series_identity(pathname: str) -> tuple[str, ...]:
-    parts = _parts(pathname)
+    parts = list(_parts(pathname))
+    # DSS6 catalogs use 5MIN where DSS7/model recipes use 5Minute.
+    match = re.fullmatch(r"([1-9][0-9]*)MIN(?:UTE)?", parts[4], re.IGNORECASE)
+    if match:
+        parts[4] = f"{match.group(1)}MIN"
     return tuple(p.upper() for i, p in enumerate(parts) if i != 3)
+
+
+def _resolve_source_selector(catalog: list[str], requested: str) -> str:
+    identity = _series_identity(requested)
+    families = set()
+    for pathname in catalog:
+        if _series_identity(pathname) == identity:
+            parts = list(_parts(pathname))
+            parts[3] = ""
+            families.add("/" + "/".join(parts).upper() + "/")
+    if not families:
+        raise ValueError("Exact source series is absent from DSS catalog")
+    if len(families) != 1:
+        raise ValueError("Source selector matches ambiguous DSS interval spellings")
+    return families.pop()
 
 
 def _curve(
@@ -339,7 +359,7 @@ class HmsBoundaryTransformer:
             raise FileExistsError(f"Refusing to overwrite boundary DSS: {output.name}")
         if _parts(output_pathname)[4].upper() != "1HOUR":
             raise ValueError("Output pathname must use an hourly E-part")
-        identity = _series_identity(source_pathname)
+        _series_identity(source_pathname)
         source_identity = _identity(source)
         actual_source = _sha256(source)
         curve_bytes = curve.read_bytes()
@@ -348,12 +368,10 @@ class HmsBoundaryTransformer:
             raise ValueError("Source DSS or curve checksum mismatch")
         model = json.loads(curve_bytes, object_pairs_hook=_unique_fields)
         _curve(model)
-        matches = [
-            p for p in DssCore.get_catalog(source) if _series_identity(p) == identity
-        ]
-        if not matches:
-            raise ValueError("Exact source series is absent from DSS catalog")
-        frame = DssCore.read_timeseries(source, source_pathname)
+        resolved_source = _resolve_source_selector(
+            DssCore.get_catalog(source), source_pathname
+        )
+        frame = DssCore.read_timeseries(source, resolved_source)
         result = HmsBoundaryTransformer.transform(frame, model)
         if _identity(source) != source_identity:
             raise RuntimeError("Source DSS changed during boundary extraction")
@@ -400,6 +418,7 @@ class HmsBoundaryTransformer:
             "method": _METHOD,
             "source_sha256": actual_source,
             "source_pathname": source_pathname,
+            "resolved_source_pathname": resolved_source,
             "curve_sha256": actual_curve,
             "output_pathname": output_pathname,
             "count": len(result),

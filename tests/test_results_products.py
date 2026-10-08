@@ -531,3 +531,86 @@ def test_materialize_handoff_fails_closed_before_publication(
             model_start=model_start,
             model_end=model_end,
         )
+
+
+@pytest.mark.parametrize("mutation", [None, "source", "manifest"])
+def test_isolated_export_authenticates_source_and_retains_conditional_status(
+    tmp_path, monkeypatch, mutation
+):
+    source = tmp_path / "source.dss"
+    source.write_bytes(b"original")
+    output = tmp_path / "products"
+
+    def child(actual_source, mappings, actual_output, **kwargs):
+        assert actual_source == source.resolve()
+        assert mappings[0]["pathname"] == FLOW_PATH
+        assert kwargs["require_valid"] is False
+        assert kwargs["maximum_final_to_peak_ratio"] == 0.25
+        actual_output.mkdir()
+        manifest = {
+            "schema": HmsResultsProducts.SCHEMA,
+            "source": {
+                "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                "size_bytes": source.stat().st_size,
+            },
+            "status": {"all_required_pathnames_valid": False},
+        }
+        if mutation == "source":
+            source.write_bytes(b"modified")
+        if mutation == "manifest":
+            manifest["source"]["sha256"] = "0" * 64
+        (actual_output / HmsResultsProducts.MANIFEST_FILENAME).write_text(
+            json.dumps(manifest)
+        )
+
+    monkeypatch.setattr(
+        HmsResultsProducts, "_export_handoff_subprocess", staticmethod(child)
+    )
+    if mutation:
+        with pytest.raises(RuntimeError, match="inconsistent source identity"):
+            HmsResultsProducts.export_isolated(
+                source,
+                [{"mapping_id": "outlet", "pathname": FLOW_PATH}],
+                output,
+                maximum_final_to_peak_ratio=0.25,
+            )
+    else:
+        manifest = HmsResultsProducts.export_isolated(
+            source,
+            [{"mapping_id": "outlet", "pathname": FLOW_PATH}],
+            output,
+            maximum_final_to_peak_ratio=0.25,
+        )
+        assert manifest["status"]["all_required_pathnames_valid"] is False
+        with pytest.raises(FileExistsError):
+            HmsResultsProducts.export_isolated(
+                source, [{"mapping_id": "outlet", "pathname": FLOW_PATH}], output
+            )
+
+
+def test_export_child_keeps_temporary_request_away_from_source(tmp_path, monkeypatch):
+    module = importlib.import_module("hms_commander.HmsResultsProducts")
+    source = tmp_path / "source" / "input.dss"
+    source.parent.mkdir()
+    source.write_bytes(b"source")
+    output = tmp_path / "outputs" / "products"
+    requests = []
+
+    def run(command, **kwargs):
+        path = Path(command[-1])
+        requests.append(path)
+        assert path.parent == output.parent
+        assert "-I" in command
+        assert json.loads(path.read_text())["require_valid"] is False
+        assert kwargs["timeout"] == 300
+        return subprocess.CompletedProcess(
+            command, 1, stdout="", stderr="native child failed"
+        )
+
+    monkeypatch.setattr(module.subprocess, "run", run)
+    with pytest.raises(RuntimeError, match="native child failed"):
+        HmsResultsProducts.export_isolated(
+            source, [{"mapping_id": "outlet", "pathname": FLOW_PATH}], output
+        )
+    assert requests and not requests[0].exists()
+    assert list(source.parent.iterdir()) == [source]

@@ -108,6 +108,46 @@ requests 1.0/1.1 reject this method. Request 1.2 also supports older explicit
 methods with their unchanged publication behavior. No engineering acceptance
 or forecast eligibility is assigned.
 
+## Preserving the source run identity
+
+Request `hms-commander/scenario-worker-request/1.3` requires
+`source_model.run_name_policy = "preserve-source"`. The selected source run
+keeps its name inside the isolated project clone. Its prepared meteorologic
+model, control, grid, output DSS, and log remain scenario-specific. Preparation
+clears historical execution timestamps without changing basin parameters or
+the canonical source project.
+
+Use this version when result selectors and downstream transformations name the
+delivered run. Every required result pathname must select the exact
+`RUN:<source_model.run>` F-part (case-insensitive); a different or wildcard run
+is rejected before preparation. All previously supported spatial-transfer
+methods remain available with their explicit publication conventions.
+
+The result records `preparation.run_identity` with `policy`, `source_run`, and
+`prepared_run`. Consumers should verify these against their requested run and
+`execution.run_name`. Separate workspaces and output files provide scenario
+isolation even when the DSS F-parts are identical.
+
+The boundary transformer resolves DSS6 `5MIN` and DSS7 `5Minute` catalog
+spellings to one exact physical source family, retaining both requested and
+resolved selectors in its evidence. It still rejects a different run or
+interval and refuses competing physical families.
+
+Older requests 1.0/1.1/1.2 are unchanged and reject the new policy field. Direct
+API callers opt in with
+`HmsScenario.prepare_workspace(..., run_name_policy="preserve-source")`;
+the default `"scenario"` policy continues creating a scenario-named run.
+
+## Native DSS stage isolation
+
+When a request includes spatial transfer, hydrograph export runs in a child
+process through `HmsResultsProducts.export_isolated()`. Windows DSS6 readers
+can retain a native file lock after closing a DSS handle. Ending the export
+child releases that lock before excess export hashes and reads the same file.
+The product schema and conditional qualification results are unchanged, and
+the parent verifies the source checksum again after export. Temporary request
+files are written beside the product destination, never in the source model.
+
 ## Result Contract
 
 The worker atomically writes

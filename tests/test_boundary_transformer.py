@@ -145,3 +145,34 @@ def test_reject_negative_curve_output(curve):
     curve["coefficients"][3][0] = -1.0
     with pytest.raises(ValueError, match="negative flow"):
         HmsBoundaryTransformer.transform(frame([1.0, 1.0]), curve)
+
+
+@pytest.mark.parametrize("interval", ["5MIN", "5Minute"])
+def test_resolves_dss_interval_spelling_without_changing_run(interval):
+    from hms_commander.HmsBoundaryTransformer import _resolve_source_selector
+
+    catalog = [
+        f"//J1/FLOW/{date}/{interval}/RUN:SOURCE/"
+        for date in ["01JAN2017", "02JAN2017"]
+    ]
+    requested = "//J1/FLOW//5Minute/RUN:Source/"
+    assert (
+        _resolve_source_selector(catalog, requested)
+        == f"//J1/FLOW//{interval.upper()}/RUN:SOURCE/"
+    )
+    for wrong in [
+        requested.replace("Source", "Other"),
+        requested.replace("5Minute", "15Minute"),
+    ]:
+        with pytest.raises(ValueError, match="absent"):
+            _resolve_source_selector(catalog, wrong)
+
+
+def test_rejects_two_physical_interval_families():
+    from hms_commander.HmsBoundaryTransformer import _resolve_source_selector
+
+    with pytest.raises(ValueError, match="ambiguous"):
+        _resolve_source_selector(
+            ["//J1/FLOW//5MIN/RUN:SOURCE/", "//J1/FLOW//5Minute/RUN:SOURCE/"],
+            "//J1/FLOW//5Minute/RUN:SOURCE/",
+        )
