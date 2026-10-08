@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "hms-commander/subbasin-volume-excess-product/3.0",
+  "title": "HMS Commander subbasin volume excess product 3.0 (delivered conventions)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "status",
+    "forecast_eligible",
+    "method",
+    "algorithm",
+    "transfer_map_sha256",
+    "source",
+    "audit",
+    "output",
+    "volume",
+    "manifest_sha256",
+    "area_basis",
+    "publication"
+  ],
+  "properties": {
+    "schema": {
+      "const": "hms-commander/subbasin-volume-excess-product/3.0"
+    },
+    "status": {
+      "const": "qualification_only"
+    },
+    "forecast_eligible": {
+      "const": false
+    },
+    "method": {
+      "const": "hms-subbasin-centroid-delivered-v1"
+    },
+    "algorithm": {
+      "const": "centroid-allocation-interval-start-floor-origin-v1"
+    },
+    "transfer_map_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source": {
+      "type": "object"
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "size_bytes",
+        "sha256",
+        "audit_sha256"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^/\\\\]+$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "audit_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "size_bytes",
+        "sha256",
+        "pathname_selector",
+        "record_count",
+        "first_pathname",
+        "last_pathname",
+        "start",
+        "end",
+        "interval_minutes",
+        "units",
+        "data_type"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^/\\\\]+$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "pathname_selector": {
+          "type": "string",
+          "minLength": 7
+        },
+        "record_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "first_pathname": {
+          "type": "string",
+          "minLength": 1
+        },
+        "last_pathname": {
+          "type": "string",
+          "minLength": 1
+        },
+        "start": {
+          "type": "string",
+          "minLength": 1
+        },
+        "end": {
+          "type": "string",
+          "minLength": 1
+        },
+        "interval_minutes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "units": {
+          "enum": [
+            "IN",
+            "MM"
+          ]
+        },
+        "data_type": {
+          "const": "PER-CUM"
+        }
+      }
+    },
+    "volume": {
+      "type": "object"
+    },
+    "manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "area_basis": {
+      "const": "selected-full-grid-cells"
+    },
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "convention",
+        "allocation_origin",
+        "dss_origin",
+        "label_offset_minutes",
+        "start",
+        "end",
+        "source_model_window"
+      ],
+      "properties": {
+        "convention": {
+          "const": "delivered-interval-start-snapped-origin"
+        },
+        "allocation_origin": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "number"
+          }
+        },
+        "dss_origin": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "number"
+          }
+        },
+        "label_offset_minutes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "start": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "source_model_window": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

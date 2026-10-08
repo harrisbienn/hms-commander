@@ -51,3 +51,25 @@ the prototype's timestamp shift or implicit grid-origin handling.
 ## Multiple receiving areas
 
 A center-selected RAS application-area 3.0 produces transfer-map 3.0 with explicit `model.two_d_flow_areas`. Selection and full-cell scaling are unchanged. Areas share one attribution grid and one denominator per subbasin; do not sum independently scaled maps. Single-area inputs retain transfer-map 2.0. Audit/product 2.0 and worker request 1.1 remain unchanged because they authenticate the map by hash.
+
+## Explicit delivered publication conventions
+
+Use `apply_delivered_transfer_map_to_dss()` when reproducing a supplied workflow
+that allocates on the map's original centroid grid, floors the DSS origin to
+whole-cell coordinates, and stamps each excess interval-end value as the output
+interval start. The arguments match `apply_transfer_map_to_dss()`; the map must
+use the centroid/full-cell allocation method. Recompile the map against the
+intended current model before use.
+
+The new product method is `hms-subbasin-centroid-delivered-v1`. Product and audit
+3.0 retain both allocation and published origins, source model window, label
+offset and actual published start/end. A source window 00:00–01:00 with five-minute
+excess produces grid coverage 00:05–01:05. This behavior is intentional for
+reproduction and must not be reported as complete 00:00–01:00 coverage.
+
+The existing allocation-map identity, exact source-series validation, overwrite
+refusal, isolated native writer, readback and volume checks are reused. Existing
+corrected/default APIs and worker request 1.1 are unchanged. This new API is a
+separate preparation boundary; normalized worker dispatch and study acceptance
+require an explicit consuming integration. No model is automatically switched
+and no engineering or forecast approval is granted by a successful publication.
