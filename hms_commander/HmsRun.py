@@ -193,7 +193,7 @@ class HmsRun:
             # Replace DSS File line
             dss_pattern = r'(\s+DSS File:\s*)([^\n]*)'
             if re.search(dss_pattern, body):
-                body = re.sub(dss_pattern, rf'\g<1>{dss_file}', body)
+                body = re.sub(dss_pattern, lambda item: item.group(1) + dss_file, body)
             else:
                 # Add DSS File line if not present
                 body = body.rstrip() + f'\n     DSS File: {dss_file}\n'
@@ -203,7 +203,7 @@ class HmsRun:
                 log_name = Path(dss_file).stem + '.log'
                 log_pattern = r'(\s+Log File:\s*)([^\n]*)'
                 if re.search(log_pattern, body):
-                    body = re.sub(log_pattern, rf'\g<1>{log_name}', body)
+                    body = re.sub(log_pattern, lambda item: item.group(1) + log_name, body)
 
             return header + body + footer
 
@@ -637,7 +637,7 @@ class HmsRun:
             # Replace DSS File line
             dss_pattern = r'(\s+DSS File:\s*)([^\n]*)'
             if re.search(dss_pattern, body):
-                body = re.sub(dss_pattern, rf'\g<1>{dss_file}', body)
+                body = re.sub(dss_pattern, lambda item: item.group(1) + dss_file, body)
             else:
                 # Add DSS File line if not present (after Log File if exists)
                 log_match = re.search(r'(\s+Log File:[^\n]*\n)', body)
@@ -653,7 +653,7 @@ class HmsRun:
                 log_name = Path(dss_file).stem + '.log'
                 log_pattern = r'(\s+Log File:\s*)([^\n]*)'
                 if re.search(log_pattern, body):
-                    body = re.sub(log_pattern, rf'\g<1>{log_name}', body)
+                    body = re.sub(log_pattern, lambda item: item.group(1) + log_name, body)
 
             return header + body + footer
 

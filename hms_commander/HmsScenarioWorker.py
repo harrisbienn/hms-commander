@@ -59,6 +59,7 @@ class HmsScenarioWorker:
     REQUEST_SCHEMA = "hms-commander/scenario-worker-request/1.0"
     CENTER_REQUEST_SCHEMA = "hms-commander/scenario-worker-request/1.1"
     DELIVERED_REQUEST_SCHEMA = "hms-commander/scenario-worker-request/1.2"
+    SOURCE_RUN_REQUEST_SCHEMA = "hms-commander/scenario-worker-request/1.3"
     RESULT_SCHEMA = "hms-commander/scenario-worker-result/1.0"
 
     @staticmethod
@@ -133,6 +134,11 @@ class HmsScenarioWorker:
             preparation_started = time.perf_counter()
             preparation = {"status": "in_progress"}
             try:
+                naming_options = (
+                    {"run_name_policy": source_model["run_name_policy"]}
+                    if "run_name_policy" in source_model
+                    else {}
+                )
                 workspace = HmsScenario.prepare_workspace(
                     source_model["project"],
                     request["workspace"],
@@ -151,6 +157,7 @@ class HmsScenarioWorker:
                     include_generated_outputs=False,
                     overwrite=False,
                     hms_exe_path=execution_options.get("hms_executable"),
+                    **naming_options,
                 )
                 checks = HmsScenario.validate_workspace(workspace)
             finally:
@@ -160,6 +167,18 @@ class HmsScenarioWorker:
                 "checks": checks,
                 "workspace": workspace.to_dict(),
             }
+            if request["schema"] == HmsScenarioWorker.SOURCE_RUN_REQUEST_SCHEMA:
+                if workspace.run_name != source_model["run"]:
+                    raise HmsScenarioWorkerError(
+                        "Prepared run does not preserve the requested source run identity",
+                        classification="preparation_failed",
+                        exit_code=3,
+                    )
+                preparation["run_identity"] = {
+                    "policy": source_model["run_name_policy"],
+                    "source_run": source_model["run"],
+                    "prepared_run": workspace.run_name,
+                }
 
             execution_started = time.perf_counter()
             execution = {"status": "in_progress"}
@@ -465,6 +484,7 @@ class HmsScenarioWorker:
             HmsScenarioWorker.REQUEST_SCHEMA,
             HmsScenarioWorker.CENTER_REQUEST_SCHEMA,
             HmsScenarioWorker.DELIVERED_REQUEST_SCHEMA,
+            HmsScenarioWorker.SOURCE_RUN_REQUEST_SCHEMA,
         }:
             raise HmsScenarioWorkerError(
                 f"Unsupported HMS worker request schema: {payload['schema']!r}",
@@ -486,9 +506,13 @@ class HmsScenarioWorker:
         )
 
         source_model = _object(payload["source_model"], "source_model")
+        preserve_source_run = (
+            payload["schema"] == HmsScenarioWorker.SOURCE_RUN_REQUEST_SCHEMA
+        )
         _require_keys(
             source_model,
-            required={"project", "project_file_sha256", "run", "grid"},
+            required={"project", "project_file_sha256", "run", "grid"}
+            | ({"run_name_policy"} if preserve_source_run else set()),
             optional={"met", "control"},
             label="source_model",
         )
@@ -510,6 +534,14 @@ class HmsScenarioWorker:
                 normalized_source[name] = _nonempty_string(
                     source_model[name], f"source_model.{name}"
                 )
+        if preserve_source_run:
+            if source_model["run_name_policy"] != "preserve-source":
+                raise HmsScenarioWorkerError(
+                    "request 1.3 requires source_model.run_name_policy='preserve-source'",
+                    classification="invalid_request",
+                    exit_code=2,
+                )
+            normalized_source["run_name_policy"] = "preserve-source"
 
         forcing = _object(payload["forcing"], "forcing")
         _require_keys(
@@ -624,12 +656,14 @@ class HmsScenarioWorker:
                     classification="invalid_request",
                     exit_code=2,
                 )
-            if (
-                transfer.get("method") == HmsSubbasinTransfer.DELIVERED_METHOD
-                and payload["schema"] != HmsScenarioWorker.DELIVERED_REQUEST_SCHEMA
-            ):
+            if transfer.get(
+                "method"
+            ) == HmsSubbasinTransfer.DELIVERED_METHOD and payload["schema"] not in {
+                HmsScenarioWorker.DELIVERED_REQUEST_SCHEMA,
+                HmsScenarioWorker.SOURCE_RUN_REQUEST_SCHEMA,
+            }:
                 raise HmsScenarioWorkerError(
-                    "delivered-centroid transfer requires request 1.2",
+                    "delivered-centroid transfer requires request 1.2 or later",
                     classification="invalid_request",
                     exit_code=2,
                 )
@@ -679,6 +713,21 @@ class HmsScenarioWorker:
                 mapping["pathname"],
                 f"products.required_pathnames[{index}].pathname",
             )
+            if preserve_source_run:
+                parts = normalized_mapping["pathname"].split("/")
+                if (
+                    len(parts) != 8
+                    or parts[0]
+                    or parts[-1]
+                    or parts[6].casefold()
+                    != f"RUN:{normalized_source['run']}".casefold()
+                    or any(token in parts[6] for token in "*?[]{}")
+                ):
+                    raise HmsScenarioWorkerError(
+                        "products.required_pathnames must select the exact preserved source run",
+                        classification="invalid_request",
+                        exit_code=2,
+                    )
             normalized_mappings.append(normalized_mapping)
         policy = _object(
             products.get("qualification_policy", {}),

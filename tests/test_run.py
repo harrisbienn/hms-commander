@@ -46,6 +46,11 @@ class TestGetDssFileDirect:
 # ---------------------------------------------------------------------------
 
 class TestSetDssFileDirect:
+    def test_windows_relative_path_is_literal(self, tmp_run):
+        value = r"output\new_run.dss"
+        HmsRun.set_dss_file_direct(tmp_run, "1%(100YR)RUN", value)
+        assert HmsRun.get_dss_file_direct(tmp_run, "1%(100YR)RUN") == value
+
     def test_modify_and_readback(self, tmp_run):
         HmsRun.set_dss_file_direct(tmp_run, "1%(100YR)RUN", "new_output.dss")
         dss = HmsRun.get_dss_file_direct(tmp_run, "1%(100YR)RUN")
