@@ -22,6 +22,9 @@ from hms_commander import (
 from hms_commander.HmsScenarioWorker import HmsScenarioWorkerError
 
 FLOW_PATH = "//OUTLET/FLOW//5Minute/RUN:SCENARIO/"
+SUBBASIN_PRODUCT_METHODS = HmsSubbasinTransfer.METHODS | {
+    HmsSubbasinTransfer.DELIVERED_METHOD
+}
 
 
 def _sha256(path: Path) -> str:
@@ -96,7 +99,7 @@ def _install_success_fakes(monkeypatch, request: dict) -> dict[str, int]:
         )
         if request.get("spatial_transfer") is not None:
             transfer = request["spatial_transfer"]
-            if transfer.get("method") not in HmsSubbasinTransfer.METHODS:
+            if transfer.get("method") not in SUBBASIN_PRODUCT_METHODS:
                 basin_source = (
                     Path(request["source_model"]["project"]) / transfer["basin_sqlite"]
                 )
@@ -216,7 +219,7 @@ def _install_success_fakes(monkeypatch, request: dict) -> dict[str, int]:
             return manifest
 
         transfer = request["spatial_transfer"]
-        if transfer.get("method") in HmsSubbasinTransfer.METHODS:
+        if transfer.get("method") in SUBBASIN_PRODUCT_METHODS:
 
             def export_subbasin_transfer(*args, **kwargs):
                 calls["transfer"] += 1
@@ -228,9 +231,13 @@ def _install_success_fakes(monkeypatch, request: dict) -> dict[str, int]:
                 manifest_path = output.with_suffix(".manifest.json")
                 manifest = {
                     "schema": (
-                        "hms-commander/subbasin-volume-excess-product/2.0"
-                        if transfer["method"] == HmsSubbasinTransfer.CENTER_METHOD
-                        else HmsSubbasinTransfer.PRODUCT_SCHEMA
+                        "hms-commander/subbasin-volume-excess-product/3.0"
+                        if transfer["method"] == HmsSubbasinTransfer.DELIVERED_METHOD
+                        else (
+                            "hms-commander/subbasin-volume-excess-product/2.0"
+                            if transfer["method"] == HmsSubbasinTransfer.CENTER_METHOD
+                            else HmsSubbasinTransfer.PRODUCT_SCHEMA
+                        )
                     ),
                     "status": "qualification_only",
                     "forecast_eligible": False,
@@ -248,7 +255,11 @@ def _install_success_fakes(monkeypatch, request: dict) -> dict[str, int]:
 
             monkeypatch.setattr(
                 worker_module.HmsSubbasinTransfer,
-                "apply_transfer_map_to_dss",
+                (
+                    "apply_delivered_transfer_map_to_dss"
+                    if transfer["method"] == HmsSubbasinTransfer.DELIVERED_METHOD
+                    else "apply_transfer_map_to_dss"
+                ),
                 staticmethod(export_subbasin_transfer),
             )
         else:
@@ -419,19 +430,31 @@ def test_worker_rejects_spatial_transfer_identity_drift(tmp_path):
     assert not Path(request["workspace"]).exists()
 
 
-@pytest.mark.parametrize("method", sorted(HmsSubbasinTransfer.METHODS))
+@pytest.mark.parametrize("method", sorted(SUBBASIN_PRODUCT_METHODS))
+@pytest.mark.parametrize("wrong_allocation", [False, True])
 def test_worker_exports_authenticated_subbasin_volume_transfer(
     tmp_path,
     monkeypatch,
     method,
+    wrong_allocation,
 ):
     request, request_path, result_path = _request(tmp_path)
     transfer_map = tmp_path / "subbasin-volume-transfer-map.json"
+    allocation_method = (
+        HmsSubbasinTransfer.CENTER_METHOD
+        if method == HmsSubbasinTransfer.DELIVERED_METHOD
+        else method
+    )
+    if wrong_allocation:
+        allocation_method = "wrong-allocation-method"
     transfer_map.write_text(
-        json.dumps({"schema": "test-map", "method": method}), encoding="utf-8"
+        json.dumps({"schema": "test-map", "method": allocation_method}),
+        encoding="utf-8",
     )
     if method == HmsSubbasinTransfer.CENTER_METHOD:
         request["schema"] = HmsScenarioWorker.CENTER_REQUEST_SCHEMA
+    if method == HmsSubbasinTransfer.DELIVERED_METHOD:
+        request["schema"] = HmsScenarioWorker.DELIVERED_REQUEST_SCHEMA
     request["spatial_transfer"] = {
         "method": method,
         "transfer_map": str(transfer_map),
@@ -451,16 +474,41 @@ def test_worker_exports_authenticated_subbasin_volume_transfer(
         legacy = dict(request, schema=HmsScenarioWorker.REQUEST_SCHEMA)
         with pytest.raises(HmsScenarioWorkerError, match="requires request 1.1"):
             HmsScenarioWorker._validate_request(legacy)
+    if method == HmsSubbasinTransfer.DELIVERED_METHOD:
+        for schema in (
+            HmsScenarioWorker.REQUEST_SCHEMA,
+            HmsScenarioWorker.CENTER_REQUEST_SCHEMA,
+        ):
+            with pytest.raises(HmsScenarioWorkerError, match="requires request 1.2"):
+                HmsScenarioWorker._validate_request(dict(request, schema=schema))
+    # New request versions retain explicit older methods without changing them.
+    assert (
+        HmsScenarioWorker._validate_request(
+            dict(request, schema=HmsScenarioWorker.DELIVERED_REQUEST_SCHEMA)
+        )["spatial_transfer"]["method"]
+        == method
+    )
     request_path.write_text(json.dumps(request), encoding="utf-8")
     calls = _install_success_fakes(monkeypatch, request)
 
+    if wrong_allocation:
+        assert HmsScenarioWorker.run(request_path, result_path) == 4
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        assert result["error"]["classification"] == "spatial_transfer_failed"
+        assert "transfer-map method differs" in result["error"]["message"]
+        assert calls["transfer"] == 0
+        return
     assert HmsScenarioWorker.run(request_path, result_path) == 0
     result = json.loads(result_path.read_text(encoding="utf-8"))
     transfer = result["products"]["spatial_transfer"]
     assert transfer["schema"] == (
-        "hms-commander/subbasin-volume-excess-product/2.0"
-        if method == HmsSubbasinTransfer.CENTER_METHOD
-        else HmsSubbasinTransfer.PRODUCT_SCHEMA
+        "hms-commander/subbasin-volume-excess-product/3.0"
+        if method == HmsSubbasinTransfer.DELIVERED_METHOD
+        else (
+            "hms-commander/subbasin-volume-excess-product/2.0"
+            if method == HmsSubbasinTransfer.CENTER_METHOD
+            else HmsSubbasinTransfer.PRODUCT_SCHEMA
+        )
     )
     assert transfer["status"] == "qualification_only"
     assert transfer["forecast_eligible"] is False
@@ -468,6 +516,10 @@ def test_worker_exports_authenticated_subbasin_volume_transfer(
     assert transfer["volume"]["aggregate"]["within_tolerance"] is True
     assert "metrics" not in transfer
     assert calls == {"prepare": 1, "execute": 1, "export": 1, "transfer": 1}
+    assert HmsScenarioWorker.run(request_path, result_path) == 0
+    assert calls == {"prepare": 1, "execute": 1, "export": 1, "transfer": 1}
+    Path(transfer["output"]["path"]).write_bytes(b"changed output")
+    assert HmsScenarioWorker.run(request_path, result_path) == 3
 
 
 def test_worker_rejects_subbasin_transfer_map_identity_drift(tmp_path):
@@ -624,6 +676,12 @@ def test_packaged_worker_schemas_match_public_contract_constants():
 
     assert request_schema["$id"] == HmsScenarioWorker.REQUEST_SCHEMA
     assert result_schema["$id"] == HmsScenarioWorker.RESULT_SCHEMA
+    delivered = json.loads(
+        (package / "scenario-worker-request-v1.2.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert delivered["$id"] == HmsScenarioWorker.DELIVERED_REQUEST_SCHEMA
 
 
 def test_jython_can_propagate_a_subprocess_timeout(tmp_path, monkeypatch):

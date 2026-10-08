@@ -69,7 +69,8 @@ reproduction and must not be reported as complete 00:00–01:00 coverage.
 
 The existing allocation-map identity, exact source-series validation, overwrite
 refusal, isolated native writer, readback and volume checks are reused. Existing
-corrected/default APIs and worker request 1.1 are unchanged. This new API is a
-separate preparation boundary; normalized worker dispatch and study acceptance
-require an explicit consuming integration. No model is automatically switched
+corrected/default APIs and worker request 1.1 are unchanged. Worker request 1.2
+can select `hms-subbasin-centroid-delivered-v1` explicitly; it consumes an
+authenticated centroid/full-cell allocation map and calls the delivered API.
+Requests 1.0/1.1 reject this publication method. No model is automatically switched
 and no engineering or forecast approval is granted by a successful publication.

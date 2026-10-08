@@ -31,6 +31,9 @@ from .LoggingConfig import get_logger
 logger = get_logger(__name__)
 
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_SUBBASIN_PRODUCT_METHODS = HmsSubbasinTransfer.METHODS | {
+    HmsSubbasinTransfer.DELIVERED_METHOD
+}
 
 
 class HmsScenarioWorkerError(RuntimeError):
@@ -55,6 +58,7 @@ class HmsScenarioWorker:
 
     REQUEST_SCHEMA = "hms-commander/scenario-worker-request/1.0"
     CENTER_REQUEST_SCHEMA = "hms-commander/scenario-worker-request/1.1"
+    DELIVERED_REQUEST_SCHEMA = "hms-commander/scenario-worker-request/1.2"
     RESULT_SCHEMA = "hms-commander/scenario-worker-result/1.0"
 
     @staticmethod
@@ -212,35 +216,45 @@ class HmsScenarioWorker:
                 transfer_config = request["spatial_transfer"]
                 try:
                     transfer_directory = product_directory / "spatial-transfer"
-                    if transfer_config.get("method") in HmsSubbasinTransfer.METHODS:
+                    if transfer_config.get("method") in _SUBBASIN_PRODUCT_METHODS:
                         transfer_map = json.loads(
                             Path(transfer_config["transfer_map"]).read_text(
                                 encoding="utf-8"
                             )
                         )
-                        if transfer_map.get("method") != transfer_config["method"]:
+                        delivered = (
+                            transfer_config["method"]
+                            == HmsSubbasinTransfer.DELIVERED_METHOD
+                        )
+                        allocation_method = (
+                            HmsSubbasinTransfer.CENTER_METHOD
+                            if delivered
+                            else transfer_config["method"]
+                        )
+                        if transfer_map.get("method") != allocation_method:
                             raise ValueError(
                                 "transfer-map method differs from worker request"
                             )
-                        transfer_manifest = (
-                            HmsSubbasinTransfer.apply_transfer_map_to_dss(
-                                artifact.dss_file,
-                                transfer_map,
-                                transfer_directory / "ras-gridded-excess.dss",
-                                transfer_config["output_pathname"],
-                                source_a_part=transfer_config["source_a_part"],
-                                source_run_name=workspace.run_name,
-                                model_start=_parse_model_time(model_window["start"]),
-                                model_end=_parse_model_time(model_window["end"]),
-                                interval_minutes=model_window["interval_minutes"],
-                                source_depth_units=transfer_config[
-                                    "source_depth_units"
-                                ],
-                                volume_tolerance=transfer_config["volume_tolerance"],
-                                readback_absolute_value_tolerance=transfer_config[
-                                    "readback_absolute_value_tolerance"
-                                ],
-                            )
+                        publish = (
+                            HmsSubbasinTransfer.apply_delivered_transfer_map_to_dss
+                            if delivered
+                            else HmsSubbasinTransfer.apply_transfer_map_to_dss
+                        )
+                        transfer_manifest = publish(
+                            artifact.dss_file,
+                            transfer_map,
+                            transfer_directory / "ras-gridded-excess.dss",
+                            transfer_config["output_pathname"],
+                            source_a_part=transfer_config["source_a_part"],
+                            source_run_name=workspace.run_name,
+                            model_start=_parse_model_time(model_window["start"]),
+                            model_end=_parse_model_time(model_window["end"]),
+                            interval_minutes=model_window["interval_minutes"],
+                            source_depth_units=transfer_config["source_depth_units"],
+                            volume_tolerance=transfer_config["volume_tolerance"],
+                            readback_absolute_value_tolerance=transfer_config[
+                                "readback_absolute_value_tolerance"
+                            ],
                         )
                     else:
                         result_hdf_candidates = sorted(
@@ -327,7 +341,7 @@ class HmsScenarioWorker:
                 }
                 evidence_key = (
                     "volume"
-                    if transfer_config.get("method") in HmsSubbasinTransfer.METHODS
+                    if transfer_config.get("method") in _SUBBASIN_PRODUCT_METHODS
                     else "metrics"
                 )
                 products["spatial_transfer"][evidence_key] = transfer_manifest[
@@ -450,6 +464,7 @@ class HmsScenarioWorker:
         if payload["schema"] not in {
             HmsScenarioWorker.REQUEST_SCHEMA,
             HmsScenarioWorker.CENTER_REQUEST_SCHEMA,
+            HmsScenarioWorker.DELIVERED_REQUEST_SCHEMA,
         }:
             raise HmsScenarioWorkerError(
                 f"Unsupported HMS worker request schema: {payload['schema']!r}",
@@ -602,14 +617,23 @@ class HmsScenarioWorker:
             transfer = _object(payload["spatial_transfer"], "spatial_transfer")
             if (
                 transfer.get("method") == HmsSubbasinTransfer.CENTER_METHOD
-                and payload["schema"] != HmsScenarioWorker.CENTER_REQUEST_SCHEMA
+                and payload["schema"] == HmsScenarioWorker.REQUEST_SCHEMA
             ):
                 raise HmsScenarioWorkerError(
-                    "center-selected transfer requires request 1.1",
+                    "center-selected transfer requires request 1.1 or later",
                     classification="invalid_request",
                     exit_code=2,
                 )
-            if transfer.get("method") in HmsSubbasinTransfer.METHODS:
+            if (
+                transfer.get("method") == HmsSubbasinTransfer.DELIVERED_METHOD
+                and payload["schema"] != HmsScenarioWorker.DELIVERED_REQUEST_SCHEMA
+            ):
+                raise HmsScenarioWorkerError(
+                    "delivered-centroid transfer requires request 1.2",
+                    classification="invalid_request",
+                    exit_code=2,
+                )
+            if transfer.get("method") in _SUBBASIN_PRODUCT_METHODS:
                 normalized_transfer = HmsScenarioWorker._subbasin_transfer_request(
                     transfer
                 )
@@ -879,7 +903,7 @@ class HmsScenarioWorker:
             label="spatial_transfer",
         )
         _require_qualification_only(transfer)
-        if transfer["method"] not in HmsSubbasinTransfer.METHODS:
+        if transfer["method"] not in _SUBBASIN_PRODUCT_METHODS:
             raise HmsScenarioWorkerError(
                 "spatial_transfer.method is unsupported",
                 classification="invalid_request",
@@ -985,7 +1009,7 @@ class HmsScenarioWorker:
 
         transfer = request.get("spatial_transfer")
         if transfer is not None:
-            if transfer.get("method") in HmsSubbasinTransfer.METHODS:
+            if transfer.get("method") in _SUBBASIN_PRODUCT_METHODS:
                 transfer_inputs = (
                     (
                         Path(transfer["transfer_map"]),
