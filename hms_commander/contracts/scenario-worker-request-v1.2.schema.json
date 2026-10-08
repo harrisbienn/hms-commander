@@ -1,0 +1,395 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "hms-commander/scenario-worker-request/1.2",
+  "title": "HMS Commander scenario worker request 1.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "scenario",
+    "source_model",
+    "forcing",
+    "model_window",
+    "workspace",
+    "products",
+    "execution"
+  ],
+  "properties": {
+    "schema": {
+      "const": "hms-commander/scenario-worker-request/1.2"
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenario_id",
+        "specification_sha256"
+      ],
+      "properties": {
+        "scenario_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "specification_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "source_model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project",
+        "project_file_sha256",
+        "run",
+        "grid"
+      ],
+      "properties": {
+        "project": {
+          "type": "string",
+          "minLength": 1
+        },
+        "project_file_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "run": {
+          "type": "string",
+          "minLength": 1
+        },
+        "grid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "met": {
+          "type": "string",
+          "minLength": 1
+        },
+        "control": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "forcing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dss",
+        "sha256",
+        "pathname"
+      ],
+      "properties": {
+        "dss": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "pathname": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "gage_inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "gage_name",
+          "dss",
+          "sha256",
+          "pathname"
+        ],
+        "properties": {
+          "gage_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "dss": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "pathname": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "spatial_transfer": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/nearestCellSpatialTransfer"
+        },
+        {
+          "$ref": "#/$defs/subbasinVolumeSpatialTransfer"
+        }
+      ]
+    },
+    "model_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "end",
+        "time_zone",
+        "interval_minutes"
+      ],
+      "properties": {
+        "start": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$"
+        },
+        "end": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$"
+        },
+        "time_zone": {
+          "type": "string",
+          "minLength": 1
+        },
+        "interval_minutes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "workspace": {
+      "type": "string",
+      "minLength": 1
+    },
+    "products": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "directory",
+        "required_pathnames"
+      ],
+      "properties": {
+        "directory": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required_pathnames": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "mapping_id",
+              "pathname"
+            ],
+            "properties": {
+              "mapping_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "pathname": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "qualification_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sentinel_threshold": {
+              "type": "number",
+              "exclusiveMaximum": 0
+            },
+            "maximum_final_to_peak_ratio": {
+              "type": "number",
+              "minimum": 0
+            },
+            "minimum_post_peak_hours": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timeout_seconds"
+      ],
+      "properties": {
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "hms_executable": {
+          "type": "string",
+          "minLength": 1
+        },
+        "max_memory": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "$defs": {
+    "nearestCellSpatialTransfer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "basin_sqlite",
+        "basin_sqlite_sha256",
+        "source_grid_definition",
+        "source_grid_definition_sha256",
+        "target_grid_definition",
+        "target_grid_definition_sha256",
+        "output_pathname",
+        "source_interval_minutes",
+        "source_value_multiplier",
+        "fingerprint_tolerance",
+        "excess_depth_units",
+        "status",
+        "forecast_eligible"
+      ],
+      "properties": {
+        "basin_sqlite": {
+          "type": "string",
+          "minLength": 1
+        },
+        "basin_sqlite_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_grid_definition": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_grid_definition_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "target_grid_definition": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_grid_definition_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "output_pathname": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_interval_minutes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source_value_multiplier": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "fingerprint_tolerance": {
+          "type": "number",
+          "minimum": 0
+        },
+        "excess_depth_units": {
+          "enum": [
+            "IN",
+            "MM"
+          ]
+        },
+        "status": {
+          "const": "qualification_only"
+        },
+        "forecast_eligible": {
+          "const": false
+        }
+      }
+    },
+    "subbasinVolumeSpatialTransfer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "transfer_map",
+        "transfer_map_sha256",
+        "output_pathname",
+        "source_a_part",
+        "source_depth_units",
+        "volume_tolerance",
+        "readback_absolute_value_tolerance",
+        "status",
+        "forecast_eligible"
+      ],
+      "properties": {
+        "method": {
+          "enum": [
+            "hms-subbasin-volume-conserving-v1",
+            "hms-subbasin-centroid-full-cell-v1",
+            "hms-subbasin-centroid-delivered-v1"
+          ]
+        },
+        "transfer_map": {
+          "type": "string",
+          "minLength": 1
+        },
+        "transfer_map_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "output_pathname": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_a_part": {
+          "type": "string"
+        },
+        "source_depth_units": {
+          "enum": [
+            "IN",
+            "MM"
+          ]
+        },
+        "volume_tolerance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "absolute_cubic_meters",
+            "relative_fraction"
+          ],
+          "properties": {
+            "absolute_cubic_meters": {
+              "type": "number",
+              "minimum": 0
+            },
+            "relative_fraction": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "readback_absolute_value_tolerance": {
+          "type": "number",
+          "minimum": 0
+        },
+        "status": {
+          "const": "qualification_only"
+        },
+        "forecast_eligible": {
+          "const": false
+        }
+      }
+    }
+  }
+}

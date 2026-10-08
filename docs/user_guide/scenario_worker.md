@@ -90,6 +90,24 @@ are rewired. Unknown or duplicate gages, ambiguous project gage files, checksum
 drift, and colliding input basenames fail closed; the canonical model is never
 edited.
 
+## Delivered excess publication
+
+Request `hms-commander/scenario-worker-request/1.2` adds explicit
+`spatial_transfer.method = "hms-subbasin-centroid-delivered-v1"`. Use the same
+subbasin transfer fields and an authenticated centroid/full-cell allocation map
+(map 2.0 or 3.0). The worker dispatches to
+`HmsSubbasinTransfer.apply_delivered_transfer_map_to_dss()`; the map's allocation
+method stays `hms-subbasin-centroid-full-cell-v1` while the product method
+identifies the delivered publication convention. A different map method fails.
+
+The result envelope remains 1.0 and authenticates product/audit 3.0, including
+the actual published start/end and origin. For five-minute excess over model
+00:00–01:00, coverage is 00:05–01:05. Consumers must retain that offset; successful
+publication does not prove coverage of the first five model minutes. Existing
+requests 1.0/1.1 reject this method. Request 1.2 also supports older explicit
+methods with their unchanged publication behavior. No engineering acceptance
+or forecast eligibility is assigned.
+
 ## Result Contract
 
 The worker atomically writes
