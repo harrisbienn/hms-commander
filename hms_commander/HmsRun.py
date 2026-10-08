@@ -27,7 +27,7 @@ Example:
 """
 
 import re
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Dict, List, Any, Optional, Union
 
 from .LoggingConfig import log_call, get_logger
@@ -200,7 +200,7 @@ class HmsRun:
 
             # Optionally update log file to match
             if update_log_file:
-                log_name = Path(dss_file).stem + '.log'
+                log_name = PureWindowsPath(dss_file).stem + '.log'
                 log_pattern = r'(\s+Log File:\s*)([^\n]*)'
                 if re.search(log_pattern, body):
                     body = re.sub(log_pattern, lambda item: item.group(1) + log_name, body)
@@ -536,7 +536,7 @@ class HmsRun:
             )
 
         # Update log file
-        log_name = Path(output_dss).stem + '.log'
+        log_name = PureWindowsPath(output_dss).stem + '.log'
         if re.search(r'\s+Log File:', new_block):
             new_block = re.sub(
                 r'(\s+Log File:\s*)([^\n]*)',
@@ -650,7 +650,7 @@ class HmsRun:
 
             # Optionally update log file to match
             if update_log_file:
-                log_name = Path(dss_file).stem + '.log'
+                log_name = PureWindowsPath(dss_file).stem + '.log'
                 log_pattern = r'(\s+Log File:\s*)([^\n]*)'
                 if re.search(log_pattern, body):
                     body = re.sub(log_pattern, lambda item: item.group(1) + log_name, body)

@@ -50,6 +50,7 @@ class TestSetDssFileDirect:
         value = r"output\new_run.dss"
         HmsRun.set_dss_file_direct(tmp_run, "1%(100YR)RUN", value)
         assert HmsRun.get_dss_file_direct(tmp_run, "1%(100YR)RUN") == value
+        assert "Log File: new_run.log" in tmp_run.read_text()
 
     def test_modify_and_readback(self, tmp_run):
         HmsRun.set_dss_file_direct(tmp_run, "1%(100YR)RUN", "new_output.dss")
