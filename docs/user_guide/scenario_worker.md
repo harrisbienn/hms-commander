@@ -128,6 +128,11 @@ The result records `preparation.run_identity` with `policy`, `source_run`, and
 `execution.run_name`. Separate workspaces and output files provide scenario
 isolation even when the DSS F-parts are identical.
 
+The boundary transformer resolves DSS6 `5MIN` and DSS7 `5Minute` catalog
+spellings to one exact physical source family, retaining both requested and
+resolved selectors in its evidence. It still rejects a different run or
+interval and refuses competing physical families.
+
 Older requests 1.0/1.1/1.2 are unchanged and reject the new policy field. Direct
 API callers opt in with
 `HmsScenario.prepare_workspace(..., run_name_policy="preserve-source")`;
