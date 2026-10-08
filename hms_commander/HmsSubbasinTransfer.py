@@ -495,6 +495,8 @@ class HmsSubbasinTransfer:
     AUDIT_SCHEMA = "hms-commander/subbasin-volume-transfer-audit/1.0"
     PRODUCT_SCHEMA = "hms-commander/subbasin-volume-excess-product/1.0"
     CENTER_METHOD = "hms-subbasin-centroid-full-cell-v1"
+    DELIVERED_METHOD = "hms-subbasin-centroid-delivered-v1"
+    DELIVERED_ALGORITHM = "centroid-allocation-interval-start-floor-origin-v1"
     CENTER_ALGORITHM = "target-center-within-mesh-and-subbasin-full-cell-scaling-v1"
     METHODS = frozenset({METHOD, CENTER_METHOD})
     AREA_PRECISION_DECIMAL_PLACES = 9
@@ -1266,8 +1268,115 @@ class HmsSubbasinTransfer:
         readback_absolute_value_tolerance: float,
     ) -> dict[str, Any]:
         """Apply a compiled map and publish a verified RAS-grid DSS product."""
+        return HmsSubbasinTransfer._apply_transfer_map_to_dss(
+            source_dss,
+            transfer_map,
+            output_dss,
+            output_pathname_selector,
+            source_a_part=source_a_part,
+            source_run_name=source_run_name,
+            model_start=model_start,
+            model_end=model_end,
+            interval_minutes=interval_minutes,
+            source_depth_units=source_depth_units,
+            volume_tolerance=volume_tolerance,
+            readback_absolute_value_tolerance=readback_absolute_value_tolerance,
+            publication_convention="aligned-interval-end",
+        )
+
+    @staticmethod
+    @log_call
+    def apply_delivered_transfer_map_to_dss(
+        source_dss: str | Path,
+        transfer_map: Mapping[str, Any],
+        output_dss: str | Path,
+        output_pathname_selector: str,
+        *,
+        source_a_part: str,
+        source_run_name: str,
+        model_start: datetime,
+        model_end: datetime,
+        interval_minutes: int,
+        source_depth_units: str,
+        volume_tolerance: Mapping[str, Any],
+        readback_absolute_value_tolerance: float,
+    ) -> dict[str, Any]:
+        """Publish centroid excess with explicitly preserved delivery conventions.
+
+        Allocation uses the map's original cell centers. DSS publication floors
+        each origin coordinate to a whole cell and uses each source interval-end
+        label as the output interval start. This intentionally differs from the
+        corrected publication method. The manifest reports the actual shifted
+        coverage; callers must not describe it as complete model-window forcing.
+
+        Args:
+            source_dss: Run-owned HMS output or inspection copy.
+            transfer_map: Validated centroid/full-cell allocation map.
+            output_dss: New destination; existing outputs are refused.
+            output_pathname_selector: Exact grid family with blank D/E parts.
+            source_a_part: Exact source pathname A-part.
+            source_run_name: Exact HMS run name.
+            model_start: Naive beginning of the HMS source window.
+            model_end: Naive end of the HMS source window.
+            interval_minutes: Source interval and published grid duration.
+            source_depth_units: IN or MM, unchanged in publication.
+            volume_tolerance: Explicit absolute/relative readback tolerances.
+            readback_absolute_value_tolerance: Maximum serialized depth error.
+
+        Returns:
+            Product 3.0 with source window, published window/origin, hashes,
+            volume accounting and readback evidence; no engineering approval.
+
+        Raises:
+            ValueError: Unsupported map, invalid series, units or settings.
+            FileExistsError: Any destination already exists.
+            RuntimeError: Publication or readback verification failed.
+        """
+        return HmsSubbasinTransfer._apply_transfer_map_to_dss(
+            source_dss,
+            transfer_map,
+            output_dss,
+            output_pathname_selector,
+            source_a_part=source_a_part,
+            source_run_name=source_run_name,
+            model_start=model_start,
+            model_end=model_end,
+            interval_minutes=interval_minutes,
+            source_depth_units=source_depth_units,
+            volume_tolerance=volume_tolerance,
+            readback_absolute_value_tolerance=readback_absolute_value_tolerance,
+            publication_convention="delivered-interval-start-snapped-origin",
+        )
+
+    @staticmethod
+    def _apply_transfer_map_to_dss(
+        source_dss: str | Path,
+        transfer_map: Mapping[str, Any],
+        output_dss: str | Path,
+        output_pathname_selector: str,
+        *,
+        source_a_part: str,
+        source_run_name: str,
+        model_start: datetime,
+        model_end: datetime,
+        interval_minutes: int,
+        source_depth_units: str,
+        volume_tolerance: Mapping[str, Any],
+        readback_absolute_value_tolerance: float,
+        publication_convention: str,
+    ) -> dict[str, Any]:
         normalized_map = HmsSubbasinTransfer.validate_transfer_map(transfer_map)
         center_selected = normalized_map["method"] == HmsSubbasinTransfer.CENTER_METHOD
+        if publication_convention not in {
+            "aligned-interval-end",
+            "delivered-interval-start-snapped-origin",
+        }:
+            raise ValueError("Unsupported publication convention")
+        delivered = publication_convention == "delivered-interval-start-snapped-origin"
+        if delivered and not center_selected:
+            raise ValueError(
+                "Delivered publication requires a centroid/full-cell allocation map"
+            )
         tolerance = _normalized_volume_tolerance(volume_tolerance)
         try:
             readback_tolerance = float(readback_absolute_value_tolerance)
@@ -1345,6 +1454,16 @@ class HmsSubbasinTransfer:
             tolerance,
         )
         boundaries = [model_start, *interval_ends.to_pydatetime().tolist()]
+        publication_origin = list(target_grid["origin"])
+        if delivered:
+            boundaries = [
+                time + timedelta(minutes=interval_minutes) for time in boundaries
+            ]
+            cell_size = target_grid["cell_size_meters"]
+            publication_origin = [
+                math.floor(value / cell_size) * cell_size
+                for value in publication_origin
+            ]
         write_result = HmsSubbasinTransfer._write_grid_subprocess(
             output,
             output_pathname_selector,
@@ -1352,7 +1471,7 @@ class HmsSubbasinTransfer:
             boundaries,
             {
                 "cell_size": target_grid["cell_size_meters"],
-                "origin": target_grid["origin"],
+                "origin": publication_origin,
                 "crs": target_grid["crs"],
                 "units": source_units,
                 "data_type": "PER-CUM",
@@ -1395,6 +1514,20 @@ class HmsSubbasinTransfer:
         }
         if center_selected:
             audit["area_basis"] = "selected-full-grid-cells"
+        if delivered:
+            publication = {
+                "convention": publication_convention,
+                "allocation_origin": list(target_grid["origin"]),
+                "dss_origin": publication_origin,
+                "label_offset_minutes": interval_minutes,
+                "start": boundaries[0].isoformat(timespec="seconds"),
+                "end": boundaries[-1].isoformat(timespec="seconds"),
+                "source_model_window": dict(audit["model_window"]),
+            }
+            audit["schema"] = "hms-commander/subbasin-volume-transfer-audit/3.0"
+            audit["method"] = HmsSubbasinTransfer.DELIVERED_METHOD
+            audit["algorithm"] = HmsSubbasinTransfer.DELIVERED_ALGORITHM
+            audit["publication"] = publication
         audit["audit_sha256"] = _canonical_sha256(audit)
         HmsSubbasinTransfer._write_json_new(audit_path, audit)
 
@@ -1434,6 +1567,15 @@ class HmsSubbasinTransfer:
         }
         if center_selected:
             manifest["area_basis"] = "selected-full-grid-cells"
+        if delivered:
+            # Keep the original map's allocation identity separate from this
+            # explicitly different temporal/spatial publication operation.
+            manifest["schema"] = "hms-commander/subbasin-volume-excess-product/3.0"
+            manifest["method"] = HmsSubbasinTransfer.DELIVERED_METHOD
+            manifest["algorithm"] = HmsSubbasinTransfer.DELIVERED_ALGORITHM
+            manifest["publication"] = publication
+            manifest["output"]["start"] = publication["start"]
+            manifest["output"]["end"] = publication["end"]
         manifest["manifest_sha256"] = _canonical_sha256(manifest)
         HmsSubbasinTransfer._write_json_new(manifest_path, manifest)
         return manifest
