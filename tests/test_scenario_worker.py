@@ -200,6 +200,9 @@ def _install_success_fakes(monkeypatch, request: dict) -> dict[str, int]:
         "export",
         staticmethod(export),
     )
+    monkeypatch.setattr(
+        worker_module.HmsResultsProducts, "export_isolated", staticmethod(export)
+    )
     if request.get("spatial_transfer") is not None:
         calls["transfer"] = 0
 

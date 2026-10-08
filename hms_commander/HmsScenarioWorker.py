@@ -200,7 +200,14 @@ class HmsScenarioWorker:
             product_started = time.perf_counter()
             try:
                 try:
-                    product_manifest = HmsResultsProducts.export(
+                    # A DSS6 read can retain a Windows native lock until process
+                    # exit. Release it before the next stage authenticates bytes.
+                    export = (
+                        HmsResultsProducts.export_isolated
+                        if request.get("spatial_transfer") is not None
+                        else HmsResultsProducts.export
+                    )
+                    product_manifest = export(
                         artifact.dss_file,
                         request["products"]["required_pathnames"],
                         product_directory,

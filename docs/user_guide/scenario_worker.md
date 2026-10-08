@@ -133,6 +133,16 @@ API callers opt in with
 `HmsScenario.prepare_workspace(..., run_name_policy="preserve-source")`;
 the default `"scenario"` policy continues creating a scenario-named run.
 
+## Native DSS stage isolation
+
+When a request includes spatial transfer, hydrograph export runs in a child
+process through `HmsResultsProducts.export_isolated()`. Windows DSS6 readers
+can retain a native file lock after closing a DSS handle. Ending the export
+child releases that lock before excess export hashes and reads the same file.
+The product schema and conditional qualification results are unchanged, and
+the parent verifies the source checksum again after export. Temporary request
+files are written beside the product destination, never in the source model.
+
 ## Result Contract
 
 The worker atomically writes

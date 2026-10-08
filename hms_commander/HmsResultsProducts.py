@@ -217,6 +217,66 @@ class HmsResultsProducts:
 
     @staticmethod
     @log_call
+    def export_isolated(
+        dss_file: Union[str, Path],
+        required_pathnames: Iterable[Mapping[str, Any]],
+        output_directory: Union[str, Path],
+        *,
+        sentinel_threshold: float = -1.0e30,
+        maximum_final_to_peak_ratio: float = 1.0,
+        minimum_post_peak_hours: float = 0.0,
+    ) -> Dict[str, Any]:
+        """Export products in a child process, releasing native DSS read locks.
+
+        Args:
+            dss_file: Completed HMS output DSS, never modified.
+            required_pathnames: Exact mapping records accepted by ``export``.
+            output_directory: New product directory.
+            sentinel_threshold: Values at or below this threshold are invalid.
+            maximum_final_to_peak_ratio: Largest accepted final/peak ratio.
+            minimum_post_peak_hours: Minimum time required after the peak.
+
+        Returns:
+            The unchanged product manifest, authenticated against the source.
+
+        Raises:
+            FileExistsError: The product destination already exists.
+            RuntimeError: Child failure or changed/inconsistent source identity.
+        """
+        source = Path(dss_file).resolve()
+        output = Path(output_directory).resolve()
+        if output.exists():
+            raise FileExistsError(
+                f"Hydrologic product directory already exists: {output}"
+            )
+        mappings = HmsResultsProducts._normalize_mappings(required_pathnames)
+        before = HmsResultsProducts._identity(source)
+        HmsResultsProducts._export_handoff_subprocess(
+            source,
+            mappings,
+            output,
+            sentinel_threshold=sentinel_threshold,
+            maximum_final_to_peak_ratio=maximum_final_to_peak_ratio,
+            minimum_post_peak_hours=minimum_post_peak_hours,
+            require_valid=False,
+        )
+        after = HmsResultsProducts._identity(source)
+        manifest = json.loads(
+            (output / HmsResultsProducts.MANIFEST_FILENAME).read_text(encoding="utf-8")
+        )
+        if (
+            before != after
+            or manifest.get("schema") != HmsResultsProducts.SCHEMA
+            or manifest.get("source", {}).get("sha256") != before["sha256"]
+            or manifest.get("source", {}).get("size_bytes") != before["size_bytes"]
+        ):
+            raise RuntimeError(
+                "Isolated product export has inconsistent source identity"
+            )
+        return manifest
+
+    @staticmethod
+    @log_call
     def materialize_handoff(
         mappings: Iterable[Mapping[str, Any]],
         output_directory: Union[str, Path],
@@ -725,10 +785,11 @@ class HmsResultsProducts:
         sentinel_threshold: float,
         maximum_final_to_peak_ratio: float,
         minimum_post_peak_hours: float,
+        require_valid: bool = True,
     ) -> None:
         """Qualify the DSS in a child so native handles close before publish."""
-        request_path = source.with_suffix(".export-request.json")
         payload = {
+            "require_valid": require_valid,
             "source": str(source),
             "required_pathnames": required_pathnames,
             "output": str(output),
@@ -738,10 +799,21 @@ class HmsResultsProducts:
                 "minimum_post_peak_hours": minimum_post_peak_hours,
             },
         }
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix=".dss-export-",
+            suffix=".json",
+            dir=output.parent,
+            delete=False,
+        ) as stream:
+            request_path = Path(stream.name)
+            json.dump(payload, stream)
         try:
-            _write_json(request_path, payload)
             command = [
                 sys.executable,
+                "-I",
                 "-c",
                 (
                     "from hms_commander.HmsResultsProducts import "
@@ -1216,7 +1288,10 @@ def _handoff_export_child_main(argv: Optional[list[str]] = None) -> int:
         maximum_final_to_peak_ratio=qualification["maximum_final_to_peak_ratio"],
         minimum_post_peak_hours=qualification["minimum_post_peak_hours"],
     )
-    if not manifest["status"]["all_required_pathnames_valid"]:
+    if (
+        payload.get("require_valid", True)
+        and not manifest["status"]["all_required_pathnames_valid"]
+    ):
         raise RuntimeError(
             "Materialized hydrologic handoff failed mechanical pathname qualification"
         )
