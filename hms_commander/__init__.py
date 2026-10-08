@@ -94,6 +94,7 @@ from .HmsHandoffWorker import HmsHandoffWorker, HmsHandoffWorkerError
 from .dss import HmsDss, HmsDssGrid, DssCore
 from .HmsResults import HmsResults
 from .HmsResultsProducts import HmsResultsProducts
+from .HmsBoundaryTransformer import HmsBoundaryTransformer
 from .HmsSpatialTransfer import HmsSpatialTransfer
 from .HmsSubbasinTransfer import HmsSubbasinTransfer
 
@@ -167,6 +168,7 @@ __all__ = [
     "HmsDssGrid",
     "HmsResults",
     "HmsResultsProducts",
+    "HmsBoundaryTransformer",
     "HmsSpatialTransfer",
     "HmsSubbasinTransfer",
 
