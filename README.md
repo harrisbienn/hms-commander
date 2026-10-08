@@ -28,6 +28,30 @@
 
 ## Why HMS Commander?
 
+### Fitted boundary hydrographs
+
+`HmsBoundaryTransformer` routes a regular HMS flow series through an explicitly
+supplied, data-only storage/outflow polynomial. `transform(frame, model)` returns
+hourly flow, storage and raw clipping diagnostics; `materialize(...)` reads and
+writes DSS through Commander in an owned child process, verifies exact logical
+selectors and checksums, and refuses existing output files. The caller binds
+scenario identity and persists its returned evidence. No pickle loader, fitting
+procedure or basin-specific coefficients are included.
+
+The `explicit-storage-polynomial-v1` JSON model requires schema version 1,
+increasing `breakpoints`, four descending-power `coefficients` rows (one column
+per interval), matching `storage_min`/`storage_max`, explicit `initial_storage`,
+`initial_outflow="curve-at-minimum-storage"`, `time_step_hours=1.0`, and
+`storage_bounds_policy="clip-and-report"`. An optional `source_sha256` records
+the fitted-model lineage. Input must be CFS/INST-VAL, regular whole minutes
+dividing an hour, with hourly-aligned start/end and no missing/negative values.
+Hourly bins use arithmetic means and left labels; the terminal timestamp is
+retained as a one-sample final bin. Storage uses the fitted flow-times-hours
+coordinate convention. Bounds clipping and initialization are explicit method
+choices whose suitability belongs to the model owner. Output diagnostics do
+not grant engineering acceptance. Failed attempts may leave partial DSS files;
+use a new run-owned path for retry rather than overwriting them.
+
 **HMS→RAS linked models are an industry standard** for watershed-to-river hydraulic analysis, yet there is no straightforward way to automate the linkage between HEC-HMS (hydrology) and HEC-RAS (hydraulics).
 
 This library exists to **bridge that gap**—extending the [ras-commander](https://github.com/gpt-cmdr/ras-commander) effort for HEC-RAS automation to include HEC-HMS workflows. While HEC-HMS provides robust internal functionality for standalone hydrologic models, the real power emerges when HMS hydrographs flow into RAS hydraulic models for flood inundation mapping, bridge analysis, and infrastructure design.
