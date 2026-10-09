@@ -167,6 +167,7 @@ nav:
       - Geospatial:
           - HmsGeo: api/hms_geo.md
           - HmsSqlite: api/hms_sqlite.md
+          - HmsForcingCoverage: api/hms_forcing_coverage.md
           - HmsHuc: api/hms_huc.md
           - HmsAorc: api/hms_aorc.md
           - HmsGrid: api/hms_grid.md
