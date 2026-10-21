@@ -293,6 +293,42 @@ class HmsSqlite:
 
     @staticmethod
     @log_call
+    def export_subbasin_regions(
+        sqlite_path: Union[str, Path],
+        basin_path: Union[str, Path],
+        output: Union[str, Path],
+        *,
+        basin_id: str,
+        repair: str = "reject",
+    ) -> dict:
+        """Export active subbasin polygons and their union without editing models.
+
+        Args:
+            sqlite_path: Authoritative HMS SQLite geometry database.
+            basin_path: Active basin model defining exact selected names.
+            output: Immutable JSON export destination (explicit native CRS).
+            basin_id: Distinct identity for the union of active polygons.
+            repair: ``reject`` invalid geometry, or explicitly ``make_valid``
+                on copies with per-polygon area and boundary change metrics.
+
+        Returns:
+            Source-authenticated geometry, partition and raw audit. Engineering
+            review remains required even when all mechanical checks pass.
+
+        Raises:
+            ValueError: Ambiguous names, missing polygons, unsupported CRS,
+                invalid geometry, non-polygon repair or source mutation.
+            FileExistsError: Destination contains a different export.
+        """
+        from ._subbasin_regions import export_regions
+
+        return export_regions(
+            Path(sqlite_path), Path(basin_path), Path(output),
+            repair=repair, basin_id=basin_id,
+        )
+
+    @staticmethod
+    @log_call
     def get_reaches(sqlite_path: Union[str, Path]) -> 'gpd.GeoDataFrame':
         """
         Read reach linestrings from the reach2d table.
