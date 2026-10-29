@@ -383,7 +383,10 @@ class HmsArfTexas:
             city: 'austin', 'dallas' or 'houston'.
             distances_mi: Distance from each cell to the watershed centroid.
             areas_mi2: Area of each cell, square miles.
-            recurrence_interval_yr, duration_hr, extrapolate: as in
+            recurrence_interval_yr: Recurrence interval in years, as in
+                :meth:`circular_arf`.
+            duration_hr: Storm duration in hours, as in :meth:`circular_arf`.
+            extrapolate: Whether to allow extrapolation, as in
                 :meth:`circular_arf`.
 
         Returns:

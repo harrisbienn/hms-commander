@@ -7,6 +7,7 @@ edit_uri: edit/main/docs/
 
 exclude_docs: |
   README.md
+  AGENTS.md
 
 theme:
   name: material

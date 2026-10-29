@@ -1175,7 +1175,7 @@ End:
 
         Args:
             met_path: Path to the .met file
-            hms_object: Optional HmsPrj instance
+            hms_object (HmsPrj, optional): Project context
             subbasin: Select a named subbasin depth curve. Without a selector,
                 ``depths`` retains the global curve; no subbasin is chosen implicitly.
 

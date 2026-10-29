@@ -5,7 +5,7 @@ Generates cumulative-rainfall hyetographs from the dimensionless Texas
 hyetograph models published by USGS and TxDOT and adopted in the TxDOT
 Hydraulic Design Manual (HDM, Chapter 4, Section 13).
 
-Methods:
+Available models:
     - ``empirical``: tabulated percentile curves by storm quartile and storm
       duration class (Williams-Sether and others, 2004, USGS SIR 2004-5075,
       Supplements 4 and 5; Table 4 of that report is the 50th percentile of
@@ -174,7 +174,8 @@ class TexasStorm:
             b: Relative duration after peak intensity (a + b = 1).
 
         Returns:
-            Cumulative fraction of total storm depth, same shape as ``F``.
+            (numpy.ndarray): Cumulative fraction of total storm depth, same shape
+                as ``F``.
         """
         F = np.asarray(F, dtype=float)
         p1 = F**2 / a
