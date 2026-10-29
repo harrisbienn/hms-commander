@@ -15,6 +15,28 @@ This file is the canonical shared instruction contract for repository-local codi
 - `.claude/settings.json` and `.codex/hooks.json` are thin hook adapters that call shared hook logic under `scripts/agent_hooks/`.
 - Primary first-class harnesses in this repository are Claude Code and Codex.
 
+## HMS Commander Entry Point
+
+- Requests to “Ask HMS Commander” use the shared
+  [.claude/skills/hms-commander/SKILL.md](.claude/skills/hms-commander/SKILL.md) workflow.
+- The Claude `hms-commander` role is an adapter to that contract.
+  Codex uses the shared skill and its native workers.
+- Project MCP is a bounded subagent-only, read-only text-information tool with non-spatial/
+  non-gridded outputs. Heavy data, execution, and edits use public Python APIs instead.
+- Check installed/released package contracts; prefer current compatible PyPI releases in
+  authorized managed environments while preserving user pins and reporting version gaps.
+- Repository editorial requirements do not govern users' external artifacts.
+
+## Defects And Contributions
+
+- When a task exposes a suspected defect or feature gap in HMS Commander, RAS Commander, or their
+  MCP servers, follow the shared
+  [.claude/skills/hms-commander-contributing/SKILL.md](.claude/skills/hms-commander-contributing/SKILL.md) workflow.
+- Protect the user's task first. Push access to the owning `gpt-cmdr` repository selects the
+  maintainer path: fix in a disposable clone, add a regression test, run the checks, and open a PR
+  without merging. Otherwise draft an issue or fork PR and submit it only with the user's approval.
+- Keep private project data out of issues, PRs, and tests. Unsupported scope is not a defect.
+
 ## Current Codex Skill Status
 
 - Codex auto-loads `AGENTS.md`.
@@ -58,7 +80,7 @@ Core areas:
 - Data/results: `HmsDss`, `HmsResults`
 - Utilities/examples: `HmsUtils`, `HmsExamples`, `HmsM3Model`
 - AORC/HUC/grids: `HmsHuc`, `HmsAorc`, `HmsGrid`, `HmsDssGrid`
-- Storm generation: `Atlas14Storm`, `FrequencyStorm`
+- Storm generation: `Atlas14Storm`, `FrequencyStorm`, `ScsTypeStorm`, `TexasStorm`
 - Project state: `HmsPrj`, `init_hms_project`, global `hms`
 
 ## Environment
@@ -144,10 +166,33 @@ generator fails the live build — treat the docs as production.
   `run_df` / `gage_df` / `pdata_df`). **If you add, rename, or remove a column on any of these (or
   add a new public DataFrame on `HmsPrj`), update `schemas.py` in the SAME change** — there is no
   automated guard for column drift. Keep `__all__` accurate; the surface enumerates it.
-- **Authoring voice (docs & notebooks).** Mechanics-forward: lead with *how to drive the API*; defer
-  method selection, parameter appropriateness, and regulatory / standard-of-care questions to HEC's
-  manuals and the reader's regional/agency references. Examples demonstrate mechanics on real data —
-  they are not endorsed engineering workflows.
+- **Authoring voice (docs & notebooks).** Mechanics-forward: explain how to drive the public API.
+  State supported HMS Commander capabilities and observations confidently, with their scope and
+  evidence. HEC documentation is primary for its documented terminology, methods, and controls;
+  project recommendations require rationale, not HEC approval. Use passive official citations,
+  maintain an objective independent voice, and do not imply HEC/USACE affiliation or endorsement.
+  Preserve identifiers, values, units, uncertainty, and retained outputs. Repository editorial
+  requirements govern maintained content and contributions, not users' external deliverables.
+
+## Technical Writing And API Consistency
+
+These standards apply only to repository-maintained HMS Commander content, code, and intended
+contributions. They do not govern user-created work outside the repository, even when produced
+with HMS Commander or its agents. External writing assistance follows the user's requirements.
+
+- Follow [the concise writing guide](.claude/references/writing/technical-writing-guide.md) for authored
+  technical prose and [the extended standard](.claude/references/writing/technical-writing-standard.md)
+  for HEC-HMS terminology, evidence, citations, and surface-specific styles.
+- HEC documentation is the primary technical source for HEC-HMS terminology, methods, and documented
+  behavior. Library behavior comes from current source, `hms_commander/schemas.py`, and test evidence.
+- Use the shared `technical-writing-auditor` skill
+  ([.claude/skills/technical-writing-auditor/SKILL.md](.claude/skills/technical-writing-auditor/SKILL.md))
+  for requested writing reviews or scoped editorial revisions. A writing audit is not hydrologic approval.
+- Use the shared `api-consistency-auditor` skill
+  ([.claude/skills/api-consistency-auditor/SKILL.md](.claude/skills/api-consistency-auditor/SKILL.md))
+  for public API changes. Its rules are verified against current code; exceptions live in `.auditor.yaml`.
+  The checker is report-only.
+- Codex exposure for both skills uses the existing generated bridge.
 
 ## Testing And Validation
 
@@ -169,3 +214,14 @@ generator fails the live build — treat the docs as production.
 - If a change is Claude-only, keep it in `CLAUDE.md`, `.claude/rules/`, `.claude/agents/`, or `.claude/commands/` as appropriate.
 - If a change is Codex-only, keep it in `.agents/native-skills/` or `.codex/` as appropriate.
 - If you change the instruction architecture, also update `docs/development/multi-harness-agent-contract.md`.
+
+## Portable Plugin Maintenance
+
+Canonical selected skills are packaged by `scripts/agent_framework/build_plugin.py` using
+`.claude/plugin/package.json`. Generated distributions contain rebased supporting references
+and source hashes; maintain the canonical sources rather than editing bundles. Read
+[plugin packaging and activation guidance](.claude/plugin/README.md) before preparing a release.
+A skills-only plugin grants no Python/runtime/project access and does not enforce client tool isolation.
+PyPI discovery automation proposes review PRs, not unattended installs or publication.
+Repository writing standards govern repository content and contributions only, including packaged
+instructions; they do not govern external user deliverables produced with these workflows.

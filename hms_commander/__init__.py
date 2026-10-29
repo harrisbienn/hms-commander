@@ -47,7 +47,7 @@ Usage:
     peaks = HmsResults.get_peak_flows("results.dss")
 """
 
-__version__ = "0.3.1"
+__version__ = "0.4.0"
 __author__ = "CLB Engineering Corporation"
 
 # Core project management
@@ -57,12 +57,11 @@ from .HmsPrj import HmsPrj, init_hms_project, hms
 from .LoggingConfig import (
     setup_logging,
     get_logger,
-    log_call,
     DEBUG,
     INFO,
     WARNING,
     ERROR,
-    CRITICAL
+    CRITICAL,
 )
 
 # Decorators
@@ -72,6 +71,9 @@ from .Decorators import log_call, standardize_path
 from .HmsGeo import HmsGeo
 from .HmsSqlite import HmsSqlite
 from .HmsForcingCoverage import HmsForcingCoverage
+
+# Pure text information (no project initialization)
+from .HmsText import HmsText
 
 # File operations (Phase 2)
 from .HmsBasin import HmsBasin
@@ -118,10 +120,12 @@ from .HmsTerrain import HmsTerrain
 from .HmsTauDEM import HmsTauDEM
 from .HmsWatershedVerification import HmsWatershedVerification
 from .HmsRoundTripValidator import HmsRoundTripValidator
+
 # Note: HmsDssGrid is imported from .dss above
 
 # Areal Reduction Factors
 from .HmsArf import HmsArf
+from .HmsArfTexas import HmsArfTexas
 
 # Atlas 14 Hyetograph Generation
 from .Atlas14Storm import Atlas14Storm, Atlas14Config
@@ -129,27 +133,31 @@ from .Atlas14Storm import Atlas14Storm, Atlas14Config
 # TP-40 Frequency Storm Hyetograph Generation
 from .FrequencyStorm import FrequencyStorm
 
+# HEC-HMS Frequency Storm (balanced / alternating-block) Hyetograph Generation
+from .BalancedFrequencyStorm import BalancedFrequencyStorm
+
 # SCS Type I, IA, II, III Hyetograph Generation
 from .ScsTypeStorm import ScsTypeStorm
+
+# Texas dimensionless hyetographs (empirical, triangular, L-gamma)
+from .TexasStorm import TexasStorm
 
 # Public API exports
 __all__ = [
     # Version
     "__version__",
-
     # Project Management
     "HmsPrj",
     "init_hms_project",
     "hms",
-
     # File Operations
+    "HmsText",
     "HmsBasin",
     "HmsBasinBuilder",
     "HmsControl",
     "HmsMet",
     "HmsGage",
     "HmsRun",
-
     # Execution
     "HmsCmdr",
     "HmsJython",
@@ -180,13 +188,10 @@ __all__ = [
 
     # Utilities
     "HmsUtils",
-
     # Example Projects
     "HmsExamples",
-
     # M3 Model HMS Projects
     "HmsM3Model",
-
     # HUC Watersheds and AORC
     "HmsHuc",
     "HmsAorc",
@@ -198,21 +203,20 @@ __all__ = [
     "HmsTauDEM",
     "HmsWatershedVerification",
     "HmsRoundTripValidator",
-
-
     # Areal Reduction Factors
     "HmsArf",
+    "HmsArfTexas",
 
     # Atlas 14
     "Atlas14Storm",
     "Atlas14Config",
-
     # TP-40 Frequency Storm
     "FrequencyStorm",
-
+    "BalancedFrequencyStorm",
     # SCS Type Storms
     "ScsTypeStorm",
-
+    # Texas Dimensionless Hyetographs
+    "TexasStorm",
     # Logging
     "setup_logging",
     "get_logger",
@@ -222,10 +226,13 @@ __all__ = [
     "WARNING",
     "ERROR",
     "CRITICAL",
-
     # Decorators
     "standardize_path",
+    # Output Parsing
+    "HmsOutput",
+    "HmsMessage",
+    "ComputeResult",
 ]
 
 # Output Parsing
-from .HmsOutput import HmsOutput, HmsMessage, ComputeResult
+from .HmsOutput import HmsOutput, HmsMessage, ComputeResult  # noqa: F401

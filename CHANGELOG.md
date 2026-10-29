@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `HmsArfTexas`: Texas 1-day areal-reduction factors per Asquith (1999), USGS WRIR 99-4267 (Austin, Dallas, Houston; 1-day, T >= 2 yr, 0-50 mi radius).
+  Reproduces WRIR Table 7 as printed by default; `dallas_intercept_correction=True` uses 0.6880 for the Dallas 24-27 mi ARF intercept (printed 0.6800). With `extrapolate=True`, an ARF or S2 outside (0, 1] raises `ValueError` from `circular_arf`, `noncircular_arf` and `depth_distance` (and so `scale_depth`/`scale_hyetograph`). Radius 0 or a tiny radius returns the r = 0 limit (1.0). The Dallas correction makes the ARF approximately continuous at r = 24 mi (residual about 0.0003) and applies over 24 <= r < 27 mi.
+  Circular radius/area and scaling depth inputs must be finite and nonnegative; noncircular cell areas must also be positive and otherwise raise `ValueError`. Invalid numeric inputs, including bools, strings, and values outside the float64 range, raise `ValueError`.
+- **TexasStorm** (`TexasStorm.generate_hyetograph`) for Texas dimensionless hyetographs: empirical curves (USGS SIR 2004-5075, Supplements 4-5), triangular and L-gamma models (TxDOT 0-4194-4; HDM 2019 Eq. 4-26 to 4-28).
+  - `nonmonotone="raise"` (default) or `"running_max"` for the eight published empirical columns that decrease with time; `running_max` records the number of adjusted ordinates and the maximum adjustment (up to 1.09 percent points) in the provenance.
+  - `total_depth_inches`, `duration_hours` and `drainage_area_sqmi` must be finite and positive.
+  - The 160 mi2 warning applies to the empirical method only (SIR 2004-5075; HDM p. 4-77).
+  - Docs state the HDM recommendation (`quartile="all"`, `duration_class="0-72"`), the HDM Table 4-16 8.70 vs SIR 6.37 value at 2.5 percent, the added (0, 0) and (100, 100) end points, and that `nws_hourly` durations of 12-13 hr, 24-25 hr and under 5 hr are unsupported.
+- `BalancedFrequencyStorm` - HEC-HMS Frequency Storm (balanced/alternating-block) hyetograph generator validated against HEC-HMS 4.13 output. Existing `FrequencyStorm` is unchanged.
+- `HmsDss.read_timeseries()` accepts optional `start_date` and `end_date`, passed to `DssCore.read_timeseries()`.
+
+### Fixed
+
+- Preserve dates through Year 3000 when decoding DSS minute/second counts and
+  nonzero Julian base dates. Scalar peak timestamps use the same conversion as
+  time-series reads.
+- Release the fork's `DssCore.write_timeseries()` native file handle after writes
+  and failures. Cleanup preserves an active read/write exception and leaves the
+  caller's JVM running; a standalone `done()` failure still propagates.
+- Normalize plugin Markdown line endings before converting skill metadata, so
+  CRLF checkouts produce portable metadata and retain correct source hashes.
+
+- DSS reads, writes and catalog calls (`DssCore`, the `HmsDss`/`HmsResults` methods built on it, and `HmsDssGrid.write_grid_timeseries()`) close the DSS file before returning, including when they raise. Through pyjnius, HEC Monolith's `HecDss.done()` only lowers a file-cache reference count, so the native file and its DSS locks stayed held for about 6 seconds, or longer if another object held the file. During that time HEC-HMS and other tools could not write the file, and on Windows it could not be renamed or deleted. hms-commander now calls `HecDSSFileAccess.close(path, True)` with the full long absolute path it opened (Windows 8.3 short names are expanded first). A failed close is logged at DEBUG and does not replace the original error.
+- DSS time-series stamps (`DssCore.read_timeseries`, `DssCore.get_peak_value` and the `HmsDss`/`HmsResults` readers built on them) use the container's base date and time granularity. Second-granularity records, such as 15-second data, previously came back in January 1900. `attrs['interval']` is in minutes, with a float below one minute (0.25 for 15 seconds).
+- `DssCore.get_peak_value()` excludes HEC missing values (-901, -902, -3.4028e38) and NaN from `peak_flow`, `min_value` and `mean_value`; ties return the first maximum.
+- `DssCore.read_timeseries()` applies its documented `start_date`/`end_date` window (inclusive); the arguments were ignored.
+- `write_paired_data()`, `write_multiple_paired_data()` and `import_atlas14_temporal()` write records again. With pyjnius 1.7.0 and 1.9.0 (both tested), `HecDss.put()` resolved to the wrong overload and nothing was written. Writes now confirm each record is in the file catalog and raise `RuntimeError` when it is not.
+- Paired-data writers raise `ValueError` for pathnames without exactly six parts, and for duplicate pathnames in one batch. heclib silently dropped the extra part.
+- `import_atlas14_temporal()` writes each probability to its own record, `//{region}/{QUARTILE}/{duration}HR//{probability}/`. The previous eight-slash pathname put every probability of a quartile on one record.
+- `HmsResults.get_volume_summary()` and `get_hydrograph_statistics()` compute acre-feet as the trapezoidal integral of CFS over hours times 3600/43560. The previous formula multiplied by the time step twice, and it failed on NumPy 2 (`np.trapz` removed), where the summary was empty.
+- `HmsResults.get_precipitation_summary()` and `HmsDss.get_total_precipitation()` total the interval depth (`PRECIP-INC`, legacy `PRECIP`) once per element and run. They previously summed every `PRECIP*` record, including cumulative `PRECIP-CUM`.
+- `HmsDss.get_peak_flows()` reads total flow (`FLOW`) only; it could report `FLOW-CUMULATIVE` volumes as peak flows.
+
+## [0.4.0] - 2026-10-04
+
+### Added
+
+- **Read-only text sections** (`HmsText.parse_sections`) parse named sections from caller-supplied `.hms`, `.basin`, `.met`, `.control`, `.run` and `.gage` text without opening files or initializing a project. The hms-commander-mcp server uses this API (#32).
+- **DataFrame schemas** (`hms_commander.schemas`) declare the column contracts of the eight `HmsPrj` project DataFrames (#22).
+- **ScienceBase example projects** (`HmsExamples.list_sciencebase_projects`, `extract_sciencebase_project`) with cached, SHA-256-verified downloads and provenance records (#16).
+- Frequency-storm met reading reports `subbasin_depths`, an explicit keyword-only subbasin selector, storm type, unit system and depth-area reduction method (#31).
+- Shared HMS Commander workflows and a generated skills-only plugin (#30, #32).
+
+### Changed
+
+- `clone_basin`, `clone_met` and `clone_control` return `Path` and use the same explicit project or global fallback. Project registry blocks use canonical `Filename:` casing (#18).
+
+### Fixed
+
+- HMS text block parsing is linear. USACE CWMS basins that end with `Zone Configuration` sections previously took over 60 seconds; an empty-header block no longer absorbs the next block (#34).
+- `HmsResults.get_precipitation_timeseries()` prefers interval rainfall (`PRECIP-INC`) and rejects cumulative or diagnostic quantities instead of returning the first `PRECIP*` match (#33).
+- Blank optional frequency-storm settings return `None` instead of raising `ValueError` (#31).
+- Cloned meteorologic registrations use HMS `Precipitation:` blocks (#20).
+- DSS time-series value handling used by notebooks 05 and 06; workstation-specific notebook paths removed (#21).
+
 ## [0.3.1] - 2026-05-07
 
 ### Added
