@@ -40,4 +40,4 @@ from hms_commander import init_hms_project, HmsCmdr
 
 ---
 
-> **Tip**: Have your LLM agent help investigate. It can read the source code, check `AGENTS.md` and `STYLE_GUIDE.md` files for context, and propose fixes following the [contributing guide](../CONTRIBUTING.md).
+> **Tip**: Have your LLM agent help investigate. It can read the source code, check `AGENTS.md` and `STYLE_GUIDE.md` files for context, and propose fixes following the [contributing guide](../../CONTRIBUTING.md).
