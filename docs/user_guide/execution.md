@@ -32,7 +32,39 @@ flowchart TD
     style N fill:#e7f5e7
 ```
 
-## Quick Examples
+## Process ownership and diagnostics
+
+`HmsJython.execute_script()` restricts the child environment to OS, user-profile,
+temporary-directory, locale and native-runtime settings. Unrelated credentials
+and Java option-injection variables are excluded. HMS/GDAL paths are set from
+the selected installation. Required settings should be qualified against that
+installation before adopting a new production runtime.
+
+On Windows, an isolated launcher waits until it belongs to a kill-on-close
+[Job Object](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)
+before it starts Java. Timeout, interruption and supervisor termination target
+that job, preserving unrelated processes. Ownership setup fails closed. After
+execution, Commander terminates remaining job members and checks that the job
+has no active processes before returning. POSIX support is limited to an owned
+process group; deliberately detached processes are outside that containment.
+
+Each invocation writes a unique `hms-process-*` directory beside the generated
+script, containing `stdout.log`, `stderr.log`, and `process.json`. Each log retains
+at most 8 MiB, and each returned stream retains its last 1 MiB with a truncation
+notice. The JSON records byte counts, truncation, exit/timeout/interruption,
+ownership and quiescence. Completion markers and known native DSS failures are
+scanned across the entire stream, including discarded bytes. A completion print
+does not override `readf fail`, `DataFormatException`, temporal-reader failures
+or `NullPointerException`.
+
+The isolated DSS handoff, product-export, boundary-transform and grid-writer
+helpers use the same supervision. They pass the explicit DSS trust/download
+settings described in [DSS operations](dss_operations.md#verified-native-runtime).
+Keep these diagnostics with the attempt. Treat failed cleanup as unsafe to retry
+until the owner verifies termination. Portable process tests do not replace
+installed-engine interruption qualification.
+
+## Quick examples
 
 ### Single Run
 

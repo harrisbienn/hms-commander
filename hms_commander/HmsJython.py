@@ -52,6 +52,7 @@ from datetime import datetime
 from .LoggingConfig import get_logger
 from .Decorators import log_call
 from ._constants import DEFAULT_EXECUTION_TIMEOUT
+from ._process import native_environment, run_owned
 
 logger = get_logger(__name__)
 
@@ -366,22 +367,23 @@ JythonHms.Exit(0)
 
         # Execute from HMS installation directory (required for HMS 3.x)
         try:
-            result = subprocess.run(
+            result = run_owned(
                 cmd,
-                capture_output=True,
                 timeout=timeout,
-                text=True,
-                cwd=str(hms_install_path)  # Critical: run from HMS directory
+                env=native_environment(),
+                output_dir=script_path.parent,
+                cwd=hms_install_path,  # Critical: run from HMS directory
             )
-
-            stdout = result.stdout if result.stdout else ""
-            stderr = result.stderr if result.stderr else ""
+            stdout, stderr = result.stdout, result.stderr
+            if result.timed_out:
+                return False, stdout, f"Timeout after {timeout} seconds"
 
             # Check for success indicators
-            computation_completed = "Finished computing" in stdout or "Computation completed" in stdout
-            project_opened = "Finished opening project" in stdout
-            script_ended = "End script" in stdout and "Exit code 0" in stdout
-            has_error = "ERROR" in stdout and "Exit code 0" not in stdout
+            markers = result.markers["stdout"]
+            computation_completed = bool({"Finished computing", "Computation completed"} & markers)
+            script_ended = {"End script", "Exit code 0"} <= markers
+            has_error = "ERROR" in markers and "Exit code 0" not in markers
+            has_error = has_error or HmsJython._native_failure(result.markers)
 
             success = (script_ended or computation_completed) and not has_error
 
@@ -503,7 +505,7 @@ JythonHms.Exit(0)
         ])
 
         # Environment variables (required for GDAL/HDF native libraries)
-        env = os.environ.copy()
+        env = native_environment()
         env["HMS_ROOT"] = str(hms_install_path) + os.sep
 
         # Update PATH for native libraries
@@ -519,24 +521,24 @@ JythonHms.Exit(0)
 
         # Execute
         try:
-            result = subprocess.run(
+            result = run_owned(
                 cmd,
-                capture_output=True,
                 timeout=timeout,
-                text=True,
                 env=env,
-                cwd=str(script_path.parent)
+                cwd=script_path.parent,
+                output_dir=script_path.parent,
             )
-
-            stdout = result.stdout if result.stdout else ""
-            stderr = result.stderr if result.stderr else ""
+            stdout, stderr = result.stdout, result.stderr
+            if result.timed_out:
+                return False, stdout, f"Timeout after {timeout} seconds"
 
             # Check for success indicators
             # Note: HMS may return non-zero but still complete successfully
             # The JythonHms.Exit(0) call generates a SystemExit that shows in stderr
-            computation_completed = "Computation completed" in stdout
-            project_opened = "Project opened" in stdout
-            has_error = "Error" in stderr and "SystemExit: 0" not in stderr
+            computation_completed = "Computation completed" in result.markers["stdout"]
+            stderr_markers = result.markers["stderr"]
+            has_error = "Error" in stderr_markers and "SystemExit: 0" not in stderr_markers
+            has_error = has_error or HmsJython._native_failure(result.markers)
 
             success = (result.returncode == 0 or computation_completed) and not has_error
 
@@ -553,6 +555,12 @@ JythonHms.Exit(0)
     # -------------------------------------------------------------------------
     # Public Execution Method
     # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _native_failure(markers) -> bool:
+        """Native read failures invalidate success even outside the retained tail."""
+        failures = {"readf fail", "DataFormatException", "Failed to create TemporalDataReader", "NullPointerException"}
+        return bool(failures & (markers["stdout"] | markers["stderr"]))
 
     @staticmethod
     @log_call
@@ -572,6 +580,13 @@ JythonHms.Exit(0)
 
         Uses direct Java invocation for reliable execution across all HMS 4.x
         versions with configurable memory settings for large models.
+
+        Each invocation retains bounded logs and process evidence in a unique
+        ``hms-process-*`` directory beside the script. Returned streams retain
+        at most 1 MiB each; full-stream completion/error scanning is independent
+        of truncation. Windows descendants are owned by a kill-on-close Job
+        Object before Java starts. Failed ownership setup refuses execution.
+        Ambient credentials and Java option-injection variables are excluded.
 
         Args:
             script_content: Jython script content to execute

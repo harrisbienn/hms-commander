@@ -12,7 +12,7 @@ import json
 import logging
 import math
 import re
-import subprocess
+from ._process import dss_environment, run_owned
 import sys
 import tempfile
 from pathlib import Path
@@ -316,7 +316,7 @@ class HmsBoundaryTransformer:
                 ),
                 encoding="utf-8",
             )
-            completed = subprocess.run(
+            completed = run_owned(
                 [
                     sys.executable,
                     "-I",
@@ -325,10 +325,13 @@ class HmsBoundaryTransformer:
                     str(request),
                     str(response),
                 ],
-                capture_output=True,
-                text=True,
                 timeout=300,
+                cwd=output.parent,
+                output_dir=output.parent,
+                env=dss_environment(),
             )
+            if completed.timed_out:
+                raise TimeoutError("Boundary transformation exceeded 300 seconds")
             if completed.returncode != 0:
                 raise RuntimeError(
                     "Boundary transformation failed: " + completed.stderr[-2000:]
