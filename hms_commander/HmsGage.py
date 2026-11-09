@@ -76,6 +76,8 @@ class HmsGage:
 
         records = []
         for name, attrs in gage_blocks.items():
+            from ._external_dss import reference_fields
+            dss_file, dss_pathname = reference_fields(attrs)
             record = {
                 'name': name,
                 'type': attrs.get(
@@ -84,14 +86,8 @@ class HmsGage:
                 ),
                 'units': attrs.get('Units', ''),
                 'data_type': attrs.get('Data Type', ''),
-                'dss_file': attrs.get(
-                    'Filename',
-                    attrs.get('DSS File Name', ''),
-                ),
-                'dss_pathname': attrs.get(
-                    'Pathname',
-                    attrs.get('DSS Pathname', ''),
-                ),
+                'dss_file': dss_file,
+                'dss_pathname': dss_pathname,
                 'description': attrs.get('Description', ''),
             }
             records.append(record)
