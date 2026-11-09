@@ -307,13 +307,35 @@ private model package, or external data service is needed. Reproduce it with:
 
 ```bash
 python -m pip install . pytest==9.1.1
-python -I -m pytest tests/test_constants.py tests/test_parsing.py tests/test_jython_script_security.py tests/test_hms_examples.py tests/test_scenario.py tests/test_scenario_worker.py tests/test_timeseries_worker.py tests/test_handoff_worker.py tests/test_results_products.py -m "not requires_hms and not local_hms and not requires_java and not requires_gis and not requires_network and not slow"
+python -I .github/scripts/check_worker_wheel.py
+python -I -m pytest tests/test_constants.py tests/test_parsing.py tests/test_jython_script_security.py tests/test_hms_examples.py tests/test_scenario.py tests/test_scenario_worker.py tests/test_timeseries_worker.py tests/test_handoff_worker.py tests/test_results_products.py tests/test_boundary_transformer.py tests/test_process_supervision.py tests/test_monolith_integrity.py tests/test_external_dss_preflight.py tests/test_gage.py -m "not requires_hms and not local_hms and not requires_java and not requires_gis and not requires_network and not slow"
+python -m pip check
 ```
 
-The Jython injection regressions and existing download/cache fixture tests are
-included. Extend the HmsExamples coverage when issue #28 lands. Installed-engine,
-Java/GIS integration, and model qualification remain separate tests; this subset
-does not certify hydraulic or hydrologic results.
+The installation check requires a wheel installation, not an editable source
+import. It parses packaged schemas and invokes the three worker entry points
+with `--help`. The unit selection covers Jython injection, bounded Python child
+processes, process-tree cleanup, trusted-cache integrity, external DSS preflight,
+and worker/product contracts. Download tests use controlled fixtures; they do
+not fetch native binaries. Windows Job lifetime tests run on Windows and are
+explicitly skipped on Linux.
+
+`Geometry and grid contracts` runs on Linux and Windows with Python 3.12. It
+deliberately provisions GIS dependencies and an exact merged RAS Commander
+companion revision for the grid-writer API. Reproduce its dependency installation
+from `.github/workflows/ci.yml`, then run:
+
+```bash
+python -I -c "import geopandas, shapely, pyproj, h5py, scipy; from ras_commander import RasDss"
+python -I -m pytest tests/test_subbasin_regions.py tests/test_spatial_transfer.py tests/test_grid_writer_worker.py -m "not requires_hms and not local_hms and not requires_java and not requires_network and not slow"
+python -m pip check
+```
+
+The GIS fixtures test spatial-transfer audits and the grid-worker contract with
+the native DSS boundary substituted. They do not initialize Java, download a DSS
+runtime, or execute HEC-HMS. Installed-engine, native DSS round trips, and model
+qualification remain separate gates; these checks do not certify hydrologic
+results. Update the companion Git pin only after the owning RAS change merges.
 
 The independent `Strict documentation` job installs `.[docs]` with
 `docs/constraints-docs.txt`, prepares tracked guide notebooks with
@@ -325,8 +347,10 @@ pages because it collides with the homepage.
 
 All jobs use hosted workers, commit-pinned Actions, read-only repository tokens,
 nonpersistent checkout credentials, and no publishing secrets. Dependabot proposes
-Action and package updates. Administrators must make the four unit matrix checks
-and `Strict documentation` required on protected main; a passing optional check
+Action and package updates. Administrators must make the four unit matrix checks,
+`Geometry and grid contracts (ubuntu-latest)`,
+`Geometry and grid contracts (windows-latest)`, and `Strict documentation`
+required on protected main; a passing optional check
 does not prevent an unchecked merge. Main was unprotected when checked on
 2026-09-21. Documentation constraints pin the build tools; broader runtime and
 transitive dependency qualification is a separate maintenance task.

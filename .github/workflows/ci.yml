@@ -35,6 +35,8 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: python -m pip install pip==26.2.1
       - run: python -m pip install . pytest==9.1.1
+      - name: Check installed worker entry points and schema resources
+        run: python -I .github/scripts/check_worker_wheel.py
       - name: Run deterministic tests without HEC, Java, GIS, or external services
         run: >-
           python -I -m pytest
@@ -42,12 +44,22 @@ jobs:
           tests/test_hms_examples.py tests/test_scenario.py tests/test_scenario_worker.py
           tests/test_timeseries_worker.py tests/test_handoff_worker.py
           tests/test_results_products.py tests/test_boundary_transformer.py
+          tests/test_process_supervision.py tests/test_monolith_integrity.py
+          tests/test_external_dss_preflight.py tests/test_gage.py
           -m "not requires_hms and not local_hms and not requires_java and not requires_gis and not requires_network and not slow"
+      - run: python -m pip check
       - run: python -m pip freeze --all
   geometry:
-    name: Subbasin geometry contracts
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    name: Geometry and grid contracts (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      CI: '1'
+      HMS_DSS_ALLOW_DOWNLOADS: '0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -56,8 +68,20 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install pip==26.2.1
-      - run: python -m pip install . pytest==9.1.1 geopandas shapely pyproj
-      - run: python -I -m pytest tests/test_subbasin_regions.py
+      # The accepted companion revision supplies the grid-writer DSS API. Update
+      # only after a reviewed RAS change merges, then validate both platforms.
+      - run: >-
+          python -m pip install . pytest==9.1.1 geopandas shapely pyproj h5py scipy
+          "ras-commander @ git+https://github.com/harrisbienn/ras-commander@904af12cf22b675f89fd9c8103b4e1a0670a56e6"
+      - name: Require the deliberate GIS and DSS API dependencies
+        run: python -I -c "import geopandas, shapely, pyproj, h5py, scipy; from ras_commander import RasDss"
+      - name: Validate geometry, spatial transfer, and grid-worker fixtures
+        run: >-
+          python -I -m pytest tests/test_subbasin_regions.py
+          tests/test_spatial_transfer.py tests/test_grid_writer_worker.py
+          -m "not requires_hms and not local_hms and not requires_java and not requires_network and not slow"
+      - run: python -m pip check
+      - run: python -m pip freeze --all
   docs:
     name: Strict documentation
     runs-on: ubuntu-latest
