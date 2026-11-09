@@ -210,7 +210,7 @@ class DssCore:
 
     @staticmethod
     def _ensure_monolith():
-        """Ensure HEC Monolith is downloaded and available."""
+        """Ensure HEC Monolith matches the independently approved runtime."""
         if DssCore._monolith is not None:
             return DssCore._monolith
 
@@ -220,10 +220,7 @@ class DssCore:
         DssCore._monolith = HecMonolithDownloader()
 
         if not DssCore._monolith.is_installed():
-            print("\n" + "=" * 80)
-            print("HEC Monolith libraries not found")
-            print("Installing automatically (one-time download, ~20 MB)...")
-            print("=" * 80)
+            logger.info("Verified DSS cache incomplete; applying configured acquisition policy")
             DssCore._monolith.install()
 
         return DssCore._monolith

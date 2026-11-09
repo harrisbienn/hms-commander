@@ -12,7 +12,47 @@ The `HmsDss` class provides methods for working with HEC-DSS (Data Storage Syste
     pip install hms-commander[dss]
     ```
 
-## Quick Examples
+## Verified native runtime
+
+DSS initialization requires `HMS_DSS_TRUST_MANIFEST`, pointing to an independently
+reviewed JSON manifest outside the writable `~/.hms-commander/dss/` cache.
+The runtime administrator must protect that manifest from worker writes and
+protect executable cache directories from other users. Hash checks do not
+replace filesystem permissions or prevent a privileged concurrent mutation.
+
+Manifest format version 1 contains:
+
+- `format_version`: `1`;
+- `platform`: `Windows`, `Linux`, or `Darwin` for the selected native library;
+- `artifacts`: every exact cache-relative `jar/<filename>` and `lib/<filename>`
+  accepted at runtime, each with lowercase `sha256` and positive `size_bytes`;
+- `downloads`: the same selected versioned JARs plus the platform ZIP archive,
+  each with its independently approved digest and byte count.
+
+Use the exact artifact/version inventory in `HecMonolithDownloader.COMMON_JARS`
+and `NATIVE_LIBS`. Do not generate approval from whatever happens to be in the
+cache, or accept a checksum delivered with untrusted bytes. This change does not
+provide approved production digests; provisioning and legitimate native DSS
+initialization remain deployment qualification requirements.
+
+Workers default to a sealed cache: missing files stop initialization without
+network access. A separately controlled provisioning step may set
+`HMS_DSS_ALLOW_DOWNLOADS=1`. Downloads use the package-owned HTTPS sources, refuse
+redirects, enforce the approved byte count and a 300-second total transfer
+deadline checked between reads, with 5-second connect and 1-second read timeouts.
+The transfer loop uses `urllib3.HTTPResponse.read1`; the selected environment
+must provide that interface. Network-stack timeout resolution may delay return
+until the current bounded read finishes.
+
+New bytes are staged, flushed, hashed and promoted without replacing an existing
+file. Native ZIP extraction accepts only approved members and sizes and rejects
+links, traversal and case collisions. Corrupt existing files and unexpected
+executable artifacts stop initialization; an operator must investigate them.
+Retry does not overwrite conflicting cache evidence. Every classpath/library
+selection validates the complete runtime, and only selected JARs enter the
+classpath. The native archive may remain in the cache for verified retry.
+
+## Quick examples
 
 ### Check DSS Availability
 
