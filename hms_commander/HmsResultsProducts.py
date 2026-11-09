@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import subprocess
+from ._process import dss_environment, run_owned
 import sys
 import tempfile
 from pathlib import Path
@@ -747,6 +748,7 @@ class HmsResultsProducts:
             _write_json(request_path, payload)
             command = [
                 sys.executable,
+                "-I",
                 "-c",
                 (
                     "from hms_commander.HmsResultsProducts import "
@@ -756,13 +758,15 @@ class HmsResultsProducts:
                 str(request_path),
             ]
             try:
-                completed = subprocess.run(
+                completed = run_owned(
                     command,
-                    check=False,
-                    capture_output=True,
-                    text=True,
                     timeout=300,
+                    cwd=output.parent,
+                    output_dir=output.parent,
+                    env=dss_environment(),
                 )
+                if completed.timed_out:
+                    raise subprocess.TimeoutExpired(command, 300)
             except subprocess.TimeoutExpired as exc:
                 raise RuntimeError("DSS handoff child exceeded 300 seconds") from exc
             if completed.returncode != 0:
@@ -824,13 +828,15 @@ class HmsResultsProducts:
                 str(request_path),
             ]
             try:
-                completed = subprocess.run(
+                completed = run_owned(
                     command,
-                    check=False,
-                    capture_output=True,
-                    text=True,
                     timeout=300,
+                    cwd=output.parent,
+                    output_dir=output.parent,
+                    env=dss_environment(),
                 )
+                if completed.timed_out:
+                    raise subprocess.TimeoutExpired(command, 300)
             except subprocess.TimeoutExpired as exc:
                 raise RuntimeError(
                     "DSS qualification child exceeded 300 seconds"

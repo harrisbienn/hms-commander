@@ -979,8 +979,8 @@ class HmsPrj:
                 continue
 
             # Parse DSS information
-            dss_file = attrs.get('Filename', '')
-            dss_pathname = attrs.get('Pathname', '')
+            from ._external_dss import reference_fields
+            dss_file, dss_pathname = reference_fields(attrs)
 
             gages.append({
                 'name': block_name,
@@ -1395,6 +1395,33 @@ class HmsPrj:
                     results.append((dss_path, pathname))
 
         return results
+
+    @log_call
+    def preflight_external_inputs(self, read_records: bool = True) -> Dict[str, Any]:
+        """Inventory and read declared external gage/grid DSS inputs.
+
+        Args:
+            read_records: Read every matched record through package DSS APIs.
+                False checks declarations and file presence without Java.
+
+        Returns:
+            Report with ``passed`` and per-reference source, exact file/selector,
+            matched pathnames, read count, status and issues. Inventory-only
+            results remain unverified. All declared blocks are included; this
+            does not infer the active model or approve hydrologic applicability.
+
+        Raises:
+            RuntimeError: If the project has not been initialized.
+
+        Note:
+            Native reads require a qualified DSS runtime. Grid reads delegate to
+            RAS Commander's existing read API. This does not run HEC-HMS or edit
+            project files. Use a disposable input copy for native qualification;
+            DSS runtimes may retain file locks.
+        """
+        self.check_initialized()
+        from ._external_dss import preflight
+        return preflight(self.project_folder, read_records)
 
     def list_run_names(self) -> List[str]:
         """Get list of all simulation run names.

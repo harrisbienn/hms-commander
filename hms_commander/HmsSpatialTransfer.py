@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import subprocess
+from ._process import dss_environment, run_owned
 import sys
 import tempfile
 from collections.abc import Mapping
@@ -994,9 +994,10 @@ class HmsSpatialTransfer:
                 json.dumps(request, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
-            completed = subprocess.run(
+            completed = run_owned(
                 [
                     sys.executable,
+                    "-I",
                     "-m",
                     "hms_commander.HmsGridWriterWorker",
                     "--request",
@@ -1004,11 +1005,13 @@ class HmsSpatialTransfer:
                     "--result",
                     str(result_path),
                 ],
-                check=False,
-                capture_output=True,
-                text=True,
                 timeout=600,
+                cwd=output.parent,
+                output_dir=output.parent,
+                env=dss_environment(),
             )
+            if completed.timed_out:
+                raise TimeoutError("Grid writer exceeded 600 seconds")
             if not result_path.is_file():
                 raise RuntimeError(
                     "Grid writer produced no result; "

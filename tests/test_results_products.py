@@ -404,10 +404,16 @@ def test_handoff_writer_serializes_child_request_and_removes_it(
         request_path = Path(command[command.index("--request") + 1])
         observed.update(json.loads(request_path.read_text(encoding="utf-8")))
         output.write_bytes(b"handoff")
-        return subprocess.CompletedProcess(command, 0, "", "")
+        result = subprocess.CompletedProcess(command, 0, "", "")
+        result.timed_out = False
+        assert "-I" in command
+        assert kwargs["cwd"] == output.parent
+        assert "HMS_SYNTHETIC_SECRET" not in kwargs["env"]
+        return result
 
     products_module = importlib.import_module("hms_commander.HmsResultsProducts")
-    monkeypatch.setattr(products_module.subprocess, "run", run_child)
+    monkeypatch.setenv("HMS_SYNTHETIC_SECRET", "fixture-only")
+    monkeypatch.setattr(products_module, "run_owned", run_child)
     HmsResultsProducts._write_handoff_subprocess(
         mappings,
         output,
@@ -603,11 +609,14 @@ def test_export_child_keeps_temporary_request_away_from_source(tmp_path, monkeyp
         assert "-I" in command
         assert json.loads(path.read_text())["require_valid"] is False
         assert kwargs["timeout"] == 300
-        return subprocess.CompletedProcess(
+        result = subprocess.CompletedProcess(
             command, 1, stdout="", stderr="native child failed"
         )
+        result.timed_out = False
+        assert kwargs["output_dir"] == output.parent
+        return result
 
-    monkeypatch.setattr(module.subprocess, "run", run)
+    monkeypatch.setattr(module, "run_owned", run)
     with pytest.raises(RuntimeError, match="native child failed"):
         HmsResultsProducts.export_isolated(
             source, [{"mapping_id": "outlet", "pathname": FLOW_PATH}], output

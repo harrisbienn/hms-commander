@@ -22,7 +22,32 @@ print(hms.run_df)        # Simulation runs
 print(hms.gage_df)       # Time-series gages
 ```
 
-## Key Features
+## External DSS input preflight
+
+After initializing an explicit project object with `load_dss_metadata=False`,
+call `project.preflight_external_inputs(read_records=False)` to inventory all
+declared `.gage` and `.grid` external DSS inputs without Java. The report includes
+the source block, exact file/selector, resolved file and issues. This mode checks
+file presence but leaves records `unverified` and `passed=False`.
+
+For a disposable input copy in a qualified native runtime,
+`project.preflight_external_inputs()` catalogs each file and reads every matched
+record. Grid decompression uses RAS Commander's existing `RasDss.read_grid()`;
+time-series reads use `HmsDss`. Blank D/E selector parts expand over cataloged
+dates/intervals; all exact matches are listed in the report. Missing records,
+failed reads, conflicting aliases or repeated keys, malformed/unterminated blocks
+and ambiguous multiple variants fail closed. Reports retain raw reference
+declarations so conflicting source values remain inspectable.
+HMS 4.9 `DSS File Name`/`DSS Pathname` and flat `Filename`/`Pathname` declarations
+share the same alias resolution in gage and project APIs.
+
+The preflight does not edit project files or execute HMS. It covers all declared
+gage/grid blocks rather than inferring which model is active. Native DSS readers
+may retain file locks; use a separate process when the caller needs immediate
+release. Input readability, project-open success, run completion and hydrologic
+acceptance remain distinct checks.
+
+## Key features
 
 - **DataFrame-based interface** - All project data in pandas DataFrames
 - **Multi-project support** - Manage multiple projects simultaneously
