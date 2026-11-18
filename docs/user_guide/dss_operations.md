@@ -22,6 +22,7 @@ The retained HMS and RAS DSS paths have separate configuration and trust boundar
 | `HmsDss`, `HmsDssGrid`, time-series and hydrologic result workers | Local `hms_commander.dss.DssCore` | `HMS_DSS_TRUST_MANIFEST`, `HMS_DSS_ALLOW_DOWNLOADS` |
 | `HmsGridWriterWorker`, launched by `HmsSpatialTransfer` or `HmsSubbasinTransfer` | `ras_commander.RasDss` | `RAS_DSS_CACHE_DIR`, `RAS_DSS_TRUST_MANIFEST`, `RAS_DSS_ALLOW_DOWNLOADS` |
 | `HmsSpatialTransfer.read_fingerprint_cube` | `ras_commander.RasDss`, in the caller process | The same RAS policy settings |
+| External-input grid preflight | `ras_commander.RasDss`, in one isolated child for the grid batch | The same RAS policy settings |
 
 The grid-writer route writes and verifies transfer grids in an isolated child process.
 Both grid launchers use the owned-process boundary, a 600-second timeout, bounded
@@ -47,16 +48,29 @@ Use a fresh process when changing native runtimes. In particular, RAS's trust
 policy refuses an already-running JVM it did not configure. Matching JAR names
 or package versions do not establish compatible loaded origins or shared approval.
 
-External-input preflight has a separate existing mixed-owner grid path:
-`_external_dss.preflight(read_records=True)` catalogs through local `HmsDss`,
-then reads grid records through `RasDss` in the same process. For a declared
-grid, the same RAS capability gate precedes its catalog/read sequence. The gate
-refuses legacy companions; it does not reconcile the two native owners. A local
-HMS JVM can therefore conflict with RAS's fresh-runtime requirement. This route has
-not been qualified by the isolated grid-worker fixtures; a failed native read
-remains a failed preflight, not an accepted input. Preserve that limitation
-until the route has an explicit ownership decision and separate native evidence
-under [HMS issue 28](https://github.com/harrisbienn/hms-commander/issues/28) and
+External-input preflight keeps the two owners in separate processes. With
+`HmsPrj.preflight_external_inputs(read_records=True)`, gage catalogs and records
+use local `HmsDss` in the caller. Declared grid references form one batch in a
+fresh isolated child; RAS owns both its catalog and grid reads. The child requires
+the same RAS capability before native calls. An HMS JVM in the caller therefore
+cannot supply the grid child's runtime. Inventory-only mode starts no child and
+leaves inputs unverified.
+
+The private grid-preflight protocol binds results to the exact request and
+reference indexes. It uses the existing owned-process boundary, explicit DSS
+environment, bounded diagnostics and a 600-second batch timeout. The parent
+rejects missing, mismatched or incomplete results, nonzero exits, timeouts and
+unreconciled ownership. Each affected grid remains failed; gage outcomes and
+individual grid-read errors stay in the public report.
+
+Requests are limited to 1 MiB and results to 8 MiB. Each attempt retains
+`request.json`, `result.json` when available, and process diagnostics under a
+new `hms-grid-preflight-*` directory in the platform temporary directory. Failure
+messages identify that directory; successful attempts are logged at DEBUG.
+There is no automatic deletion: inspect process ownership before deliberately
+retiring retained attempts. Portable fixtures prove routing and refusal, while
+actual native compatibility/readback remains under
+[HMS issue 28](https://github.com/harrisbienn/hms-commander/issues/28) and
 [FloodForecast integration F11](https://github.com/harrisbienn/floodforecast/issues/326).
 
 ## Local HMS native runtime

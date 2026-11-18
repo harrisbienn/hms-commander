@@ -133,9 +133,9 @@ Core areas:
   source fingerprints through `RasDss` in the caller process. Both routes require
   the selected RAS trust capability before native I/O. Preserve these owners;
   qualify their native caches separately rather than inferring shared trust from
-  matching binary names. External-input grid preflight checks the same RAS
-  capability but still mixes local catalog and RAS grid reads, retaining a
-  separate native qualification limitation.
+  matching binary names. External-input grid preflight uses one isolated,
+  owned RAS child for both catalog and grid reads; gage preflight retains local
+  HMS ownership. Never mix those two JVM owners in the same preflight process.
   See `docs/user_guide/dss_operations.md`.
 - HMS 3.x projects need extra version awareness, especially for Python 2-compatible Jython execution.
 - Clone workflows should be non-destructive, traceable, and side-by-side comparable in HEC-HMS.

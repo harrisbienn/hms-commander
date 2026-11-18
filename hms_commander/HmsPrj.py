@@ -1414,10 +1414,13 @@ class HmsPrj:
             RuntimeError: If the project has not been initialized.
 
         Note:
-            Native reads require a qualified DSS runtime. Grid reads delegate to
-            RAS Commander's existing read API. This does not run HEC-HMS or edit
-            project files. Use a disposable input copy for native qualification;
-            DSS runtimes may retain file locks.
+            Native reads require qualified DSS runtimes. Gage reads use local
+            HMS DSS; grid catalogs and reads use RAS Commander in one isolated,
+            owned child with a 600-second timeout. Its attempt files and bounded
+            diagnostics remain under the temporary directory for inspection.
+            Worker failure leaves each affected grid reference failed. This
+            does not run HEC-HMS or edit project files. Use a disposable input
+            copy for native qualification; DSS runtimes may retain file locks.
         """
         self.check_initialized()
         from ._external_dss import preflight

@@ -175,12 +175,12 @@ def test_grid_launch_uses_owned_isolated_runtime(tmp_path, monkeypatch, route, o
     assert len(observed) == 1
 
 
-@pytest.mark.parametrize("route", ["fingerprint", "external_preflight"])
+@pytest.mark.parametrize("route", ["fingerprint", "external_worker"])
 @pytest.mark.parametrize("policy", [None, "unsupported/2", POLICY])
 def test_direct_grid_readers_admit_policy_before_native_io(
     tmp_path, monkeypatch, route, policy
 ):
-    """Companion admission also covers retained caller-process read routes."""
+    """Companion admission covers caller fingerprint and child preflight reads."""
     package = ModuleType("ras_commander")
     module = ModuleType("ras_commander.dss._hec_monolith")
     module.HecMonolithDownloader = SimpleNamespace(TRUST_POLICY=policy)
@@ -191,7 +191,10 @@ def test_direct_grid_readers_admit_policy_before_native_io(
         raise RuntimeError("synthetic catalog boundary reached")
 
     package.RasDss = SimpleNamespace(get_catalog=catalog)
+    dss_package = ModuleType("ras_commander.dss")
+    dss_package.RasDss = package.RasDss
     monkeypatch.setitem(sys.modules, "ras_commander", package)
+    monkeypatch.setitem(sys.modules, "ras_commander.dss", dss_package)
     monkeypatch.setitem(sys.modules, "ras_commander.dss._hec_monolith", module)
     source = tmp_path / "input.dss"
     source.write_bytes(b"synthetic input, not a DSS file")
@@ -215,15 +218,17 @@ def test_direct_grid_readers_admit_policy_before_native_io(
                 interval_minutes=60,
             )
     else:
-        from hms_commander._external_dss import preflight
-        from hms_commander.dss.hms_dss import HmsDss
+        from hms_commander._grid_preflight import _read_references
 
-        monkeypatch.setattr(HmsDss, "get_catalog", catalog)
-        (tmp_path / "project.grid").write_text(
-            "Grid: Rain\n     Data Source Type: External DSS\n"
-            "     Filename: input.dss\n     Pathname: /A/B/PRECIP///F/\nEnd:\n"
+        outcomes = _read_references(
+            [
+                {
+                    "reference_index": 0,
+                    "dss_file": str(source),
+                    "selector": "/A/B/PRECIP///F/",
+                }
+            ]
         )
-        report = preflight(tmp_path, True)
-        assert not report["passed"]
-        assert expected in report["references"][0]["issues"][0]
+        assert outcomes[0]["status"] == "failed"
+        assert expected in outcomes[0]["issues"][0]
     assert calls == ([source] if policy == POLICY else [])
