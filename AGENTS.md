@@ -127,7 +127,16 @@ Core areas:
 
 - HMS project discovery starts from `.hms` project files, not RAS `.prj` files.
 - HMS primary editable text files are `.hms`, `.basin`, `.met`, `.control`, `.gage`, and `.run`.
-- HMS results are DSS-based. `hms-commander` uses `ras-commander` DSS infrastructure rather than duplicating DSS tooling.
+- HMS results are DSS-based. `HmsDss`, `HmsDssGrid` and time-series workers use
+  the package-local `DssCore`. `HmsGridWriterWorker` uses RAS Commander's `RasDss`
+  for isolated spatial/subbasin-transfer grid writes; `HmsSpatialTransfer` reads
+  source fingerprints through `RasDss` in the caller process. Both routes require
+  the selected RAS trust capability before native I/O. Preserve these owners;
+  qualify their native caches separately rather than inferring shared trust from
+  matching binary names. External-input grid preflight checks the same RAS
+  capability but still mixes local catalog and RAS grid reads, retaining a
+  separate native qualification limitation.
+  See `docs/user_guide/dss_operations.md`.
 - HMS 3.x projects need extra version awareness, especially for Python 2-compatible Jython execution.
 - Clone workflows should be non-destructive, traceable, and side-by-side comparable in HEC-HMS.
 - HMS-to-RAS workflows should hand off DSS file, pathname, outlet/spatial reference, time window, units, and validation notes.

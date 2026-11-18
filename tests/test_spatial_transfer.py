@@ -314,6 +314,9 @@ def test_read_fingerprint_cube_authenticates_grid_and_window(
     monkeypatch,
 ):
     from ras_commander import RasDss
+    from hms_commander import _dss_runtime
+
+    monkeypatch.setattr(_dss_runtime, "require_ras_dss_policy", lambda: None)
 
     source = tmp_path / "forcing.dss"
     source.write_bytes(b"forcing")
@@ -370,6 +373,9 @@ def test_read_fingerprint_cube_authenticates_grid_and_window(
 
 def test_read_fingerprint_cube_rejects_grid_drift(tmp_path, monkeypatch):
     from ras_commander import RasDss
+    from hms_commander import _dss_runtime
+
+    monkeypatch.setattr(_dss_runtime, "require_ras_dss_policy", lambda: None)
 
     source = tmp_path / "forcing.dss"
     source.write_bytes(b"forcing")

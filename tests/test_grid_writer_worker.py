@@ -9,8 +9,15 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from hms_commander import HmsGridWriterWorker
+
+
+@pytest.fixture(autouse=True)
+def fixture_runtime_admission(monkeypatch):
+    """These tests replace native I/O; policy refusal has its own boundary tests."""
+    monkeypatch.setattr(HmsGridWriterWorker, "require_ras_dss_policy", lambda: None)
 
 
 def _sha256(path: Path) -> str:

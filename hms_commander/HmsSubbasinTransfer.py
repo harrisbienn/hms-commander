@@ -6,7 +6,6 @@ import hashlib
 import json
 import math
 import re
-import subprocess
 import sys
 import tempfile
 from collections.abc import Iterable, Mapping
@@ -18,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 from .Decorators import log_call
+from ._process import dss_environment, run_owned
 
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _AREA_UNIT_FACTORS = {
@@ -1642,9 +1642,10 @@ class HmsSubbasinTransfer:
                 json.dumps(request, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
-            completed = subprocess.run(
+            completed = run_owned(
                 [
                     sys.executable,
+                    "-I",
                     "-m",
                     "hms_commander.HmsGridWriterWorker",
                     "--request",
@@ -1652,11 +1653,15 @@ class HmsSubbasinTransfer:
                     "--result",
                     str(result_path),
                 ],
-                check=False,
-                capture_output=True,
-                text=True,
                 timeout=600,
+                cwd=output.parent,
+                output_dir=output.parent,
+                env=dss_environment(),
             )
+            if completed.timed_out:
+                raise TimeoutError("Grid writer exceeded 600 seconds")
+            if not completed.quiescent:
+                raise RuntimeError("Grid writer process ownership is not reconciled")
             if not result_path.is_file():
                 raise RuntimeError(
                     "Grid writer produced no result; "

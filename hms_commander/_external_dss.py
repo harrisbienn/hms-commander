@@ -4,6 +4,7 @@ import fnmatch
 import re
 from pathlib import Path
 
+from ._dss_runtime import require_ras_dss_policy
 from ._parsing import HmsFileParser
 
 _REFERENCE_KEYS = {
@@ -168,6 +169,8 @@ def preflight(project_folder, read_records):
             if not read_records:
                 record["status"] = "unverified"
                 continue
+            if record["kind"] == "grid":
+                require_ras_dss_policy()
             identity = str(dss_path.resolve())
             if identity not in catalogs:
                 catalogs[identity] = HmsDss.get_catalog(dss_path)

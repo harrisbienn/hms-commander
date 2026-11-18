@@ -740,6 +740,9 @@ class HmsSpatialTransfer:
             label="source grid definition",
             crs_factory=CRS,
         )
+        from ._dss_runtime import require_ras_dss_policy
+
+        require_ras_dss_policy()
         catalog = RasDss.get_catalog(source)
         records: list[tuple[datetime, datetime, str]] = []
         for raw_pathname in catalog["pathname"].astype(str):
@@ -1012,6 +1015,8 @@ class HmsSpatialTransfer:
             )
             if completed.timed_out:
                 raise TimeoutError("Grid writer exceeded 600 seconds")
+            if not completed.quiescent:
+                raise RuntimeError("Grid writer process ownership is not reconciled")
             if not result_path.is_file():
                 raise RuntimeError(
                     "Grid writer produced no result; "

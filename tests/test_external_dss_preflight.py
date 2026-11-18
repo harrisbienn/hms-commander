@@ -100,6 +100,9 @@ def test_grid_preflight_delegates_exact_reads_and_reports_decompression(
 ):
     import sys
     from types import SimpleNamespace
+    from hms_commander import _external_dss
+
+    monkeypatch.setattr(_external_dss, "require_ras_dss_policy", lambda: None)
 
     folder, gage = inputs
     gage.unlink()
