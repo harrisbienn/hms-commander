@@ -35,20 +35,13 @@ See Also:
     - HmsExamples: For HMS installation example projects
 """
 
-import os
-import requests
-import zipfile
 import pandas as pd
 from pathlib import Path
 import shutil
 from typing import Union, List, Dict, Optional, Tuple
-from datetime import datetime
-import logging
-from tqdm import tqdm
-import csv
-import io
 
 from .LoggingConfig import get_logger, log_call
+from ._m3_intake import extract_project as _extract_m3_project
 
 logger = get_logger(__name__)
 
@@ -533,199 +526,61 @@ class HmsM3Model:
         model_id: str,
         unit_id: str,
         output_path: Optional[Union[str, Path]] = None,
-        overwrite: bool = False
+        overwrite: bool = False,
+        *,
+        max_archive_bytes: int = 512 * 1024 * 1024,
+        max_uncompressed_bytes: int = 2 * 1024 * 1024 * 1024,
+        max_members: int = 10000,
+        max_path_depth: int = 32,
     ) -> Path:
-        """
-        Download and extract a specific HMS project from an M3 Model.
+        """Download and stage one HMS project without deleting an existing copy.
 
-        This downloads the full M3 model zip, then extracts only the
-        HEC-HMS folder for the specified unit.
+        The complete nested archive is checked before publication. One common
+        wrapper directory is removed, while nested project directories remain.
+        Replacement retains an inventoried prior copy in a unique intake folder.
 
         Args:
-            model_id: Model letter (e.g., 'D' for Brays Bayou)
-            unit_id: HCFCD unit number (e.g., 'D100-00-00')
-            output_path: Where to extract. Default: ./m3_hms_projects/
-            overwrite: If True, overwrite existing extraction
+            model_id: Model letter, for example 'D'.
+            unit_id: Catalog unit identifier, for example 'D100-00-00'.
+            output_path: Output root. Defaults to ./m3_hms_projects/.
+            overwrite: Replace an existing project after staging and verification.
+                False reuses the existing directory without downloading or checking it.
+            max_archive_bytes: Byte ceiling for the download and nested ZIP;
+                defaults to 512 MiB. Actual streamed bytes are checked.
+            max_uncompressed_bytes: Total extracted project byte ceiling;
+                defaults to 2 GiB. Increase deliberately for a reviewed delivery.
+            max_members: Maximum entries in either ZIP; defaults to 10,000.
+            max_path_depth: Maximum path components per ZIP entry, including
+                a wrapper directory; defaults to 32.
 
         Returns:
-            Path to extracted HMS project folder
+            Path to the extracted project directory.
 
-        Example:
-            >>> path = HmsM3Model.extract_project('D', 'D100-00-00')
-            >>> hms = init_hms_project(path)
-            >>> HmsCmdr.compute_run("1PCT")
+        Raises:
+            ValueError: An identifier, archive path, entry or byte budget is invalid.
+            FileNotFoundError: The selected nested HMS archive is absent.
+            RuntimeError: Another intake holds the lock, or restoration needs review.
+            OSError: Download storage, extraction or publication fails.
+            requests.RequestException: Acquisition fails before publication.
+            zipfile.BadZipFile: A ZIP directory or member CRC is invalid.
 
         Note:
-            These are HMS 3.x projects. Use python2_compatible=True
-            for Jython script generation.
+            The output root must be writable only by trusted cooperating callers.
+            Failed attempts and prior projects are retained for inspection. A process
+            interruption between directory renames may require explicit recovery;
+            never remove a stale intake lock while its writer is still active.
+            This checks archive integrity, not engineering readiness. HMS 3.x
+            execution still requires python2_compatible=True for Jython.
         """
         model_id = model_id.upper()
-
-        # Validate inputs
-        project_info = cls.get_project_info(model_id, unit_id)
-        relative_path = project_info['relative_path']
-
-        # Determine output directory
-        if output_path is None:
-            base_output = cls.models_dir
-        else:
-            base_output = Path(output_path)
-            if not base_output.is_absolute():
-                base_output = Path.cwd() / base_output
-
-        base_output.mkdir(parents=True, exist_ok=True)
-
-        # Project destination
-        project_dest = base_output / model_id / unit_id
-
-        logger.info("----- HmsM3Model Extracting Project -----")
-        logger.info(f"Model: {model_id} - {cls.MODELS[model_id]['name']}")
-        logger.info(f"Unit: {unit_id}")
-
-        # Check if already extracted
-        if project_dest.exists():
-            if not overwrite:
-                logger.info(f"Project already exists at {project_dest}")
-                logger.info("Use overwrite=True to re-download")
-                return project_dest
-            else:
-                logger.info(f"Removing existing project...")
-                shutil.rmtree(project_dest)
-
-        # Download the full model zip
-        zip_path = base_output / cls._get_filename(model_id)
-        url = cls._get_download_url(model_id)
-
-        logger.info(f"Downloading from: {url}")
-        logger.info(f"Size: ~{cls.MODELS[model_id]['size_gb']} GB")
-
-        try:
-            response = requests.get(url, stream=True, timeout=300)
-            response.raise_for_status()
-
-            total_size = int(response.headers.get('content-length', 0))
-
-            with open(zip_path, 'wb') as file:
-                if total_size > 0:
-                    with tqdm(
-                        desc=f"Downloading {model_id}",
-                        total=total_size,
-                        unit='iB',
-                        unit_scale=True,
-                        unit_divisor=1024,
-                    ) as progress_bar:
-                        for chunk in response.iter_content(chunk_size=8192):
-                            size = file.write(chunk)
-                            progress_bar.update(size)
-                else:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        file.write(chunk)
-
-            logger.info(f"Downloaded to {zip_path}")
-
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to download model '{model_id}': {e}")
-            if zip_path.exists():
-                zip_path.unlink()
-            raise
-
-        # Extract the HMS project from nested zip structure
-        # M3 zips contain: HEC-HMS/{unit_id}.zip which contains the actual HMS files
-        logger.info(f"Extracting HMS project to {project_dest}...")
-
-        try:
-            project_dest.mkdir(parents=True, exist_ok=True)
-
-            # Find the inner HMS zip file
-            # Pattern: HEC-HMS/{model}_{unit_id}.zip or HEC-HMS/{unit_id with underscores}.zip
-            unit_patterns = [
-                f"HEC-HMS/{model_id}_{unit_id.replace('-', '_')}.zip",
-                f"HEC-HMS/{model_id}_{unit_id.replace('-', '-')}.zip",
-                f"HEC-HMS/{unit_id.replace('-', '_')}.zip",
-                f"HEC-HMS/{unit_id}.zip",
-            ]
-
-            with zipfile.ZipFile(zip_path, 'r') as outer_zf:
-                # List all HMS zip files in the outer zip
-                hms_zips = [n for n in outer_zf.namelist()
-                           if n.startswith('HEC-HMS/') and n.endswith('.zip')]
-
-                logger.debug(f"Found {len(hms_zips)} HMS zip files in model")
-
-                # Find matching inner zip
-                inner_zip_name = None
-                for pattern in unit_patterns:
-                    for hms_zip in hms_zips:
-                        if hms_zip.lower() == pattern.lower():
-                            inner_zip_name = hms_zip
-                            break
-                    if inner_zip_name:
-                        break
-
-                # Fallback: try to match by unit_id prefix
-                if not inner_zip_name:
-                    unit_base = unit_id.replace('-', '_').replace('-', '')
-                    for hms_zip in hms_zips:
-                        zip_base = Path(hms_zip).stem.replace('_', '').replace('-', '')
-                        if unit_base.lower() in zip_base.lower():
-                            inner_zip_name = hms_zip
-                            logger.debug(f"Matched by prefix: {hms_zip}")
-                            break
-
-                if not inner_zip_name:
-                    # List available for debugging
-                    available = [Path(z).stem for z in hms_zips]
-                    raise FileNotFoundError(
-                        f"Could not find HMS zip for unit '{unit_id}' in model {model_id}. "
-                        f"Available: {available}"
-                    )
-
-                logger.info(f"Found inner HMS zip: {inner_zip_name}")
-
-                # Extract inner zip to memory and then extract its contents
-                with outer_zf.open(inner_zip_name) as inner_file:
-                    inner_content = inner_file.read()
-                    inner_zf = zipfile.ZipFile(io.BytesIO(inner_content))
-
-                    extracted_count = 0
-                    for member in inner_zf.namelist():
-                        # Skip directory entries
-                        if member.endswith('/'):
-                            continue
-
-                        # Remove the first folder level (e.g., "D_D100-00-00/file.hms" -> "file.hms")
-                        parts = member.split('/')
-                        if len(parts) > 1:
-                            relative_file = '/'.join(parts[1:])
-                        else:
-                            relative_file = member
-
-                        if relative_file:
-                            dest_file = project_dest / relative_file
-                            dest_file.parent.mkdir(parents=True, exist_ok=True)
-
-                            with inner_zf.open(member) as src:
-                                with open(dest_file, 'wb') as dst:
-                                    shutil.copyfileobj(src, dst)
-                            extracted_count += 1
-
-                    inner_zf.close()
-
-                logger.info(f"Extracted {extracted_count} files")
-
-        except Exception as e:
-            logger.error(f"Failed to extract HMS project: {e}")
-            if project_dest.exists():
-                shutil.rmtree(project_dest)
-            raise
-        finally:
-            # Clean up zip file
-            if zip_path.exists():
-                zip_path.unlink()
-                logger.debug(f"Removed temporary zip file: {zip_path}")
-
-        logger.info(f"Successfully extracted to {project_dest}")
-        return project_dest
+        cls.get_project_info(model_id, unit_id)
+        base_output = cls.models_dir if output_path is None else Path(output_path)
+        return _extract_m3_project(
+            cls._get_download_url(model_id), Path(base_output), model_id, unit_id,
+            overwrite=overwrite, max_archive_bytes=max_archive_bytes,
+            max_uncompressed_bytes=max_uncompressed_bytes, max_members=max_members,
+            max_path_depth=max_path_depth,
+        )
 
     @classmethod
     @log_call

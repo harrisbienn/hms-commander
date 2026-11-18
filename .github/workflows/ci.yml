@@ -41,7 +41,7 @@ jobs:
         run: >-
           python -I -m pytest
           tests/test_constants.py tests/test_parsing.py tests/test_jython_script_security.py
-          tests/test_hms_examples.py tests/test_scenario.py tests/test_scenario_worker.py
+          tests/test_hms_examples.py tests/test_m3_intake.py tests/test_scenario.py tests/test_scenario_worker.py
           tests/test_timeseries_worker.py tests/test_handoff_worker.py
           tests/test_results_products.py tests/test_boundary_transformer.py
           tests/test_process_supervision.py tests/test_monolith_integrity.py tests/test_dss_runtime_boundary.py
