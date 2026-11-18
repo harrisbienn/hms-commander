@@ -4,6 +4,7 @@ import fnmatch
 import re
 from pathlib import Path
 
+from ._grid_preflight import read_references as _read_grid_references
 from ._parsing import HmsFileParser
 
 _REFERENCE_KEYS = {
@@ -149,7 +150,8 @@ def preflight(project_folder, read_records):
 
     references = inventory(project_folder)
     catalogs = {}
-    for record in references:
+    grids = []
+    for index, record in enumerate(references):
         record["matched_pathnames"] = []
         record["records_read"] = 0
         record["status"] = "failed"
@@ -168,6 +170,15 @@ def preflight(project_folder, read_records):
             if not read_records:
                 record["status"] = "unverified"
                 continue
+            if record["kind"] == "grid":
+                grids.append(
+                    {
+                        "reference_index": index,
+                        "dss_file": str(dss_path.resolve()),
+                        "selector": record["pathname"],
+                    }
+                )
+                continue
             identity = str(dss_path.resolve())
             if identity not in catalogs:
                 catalogs[identity] = HmsDss.get_catalog(dss_path)
@@ -176,22 +187,33 @@ def preflight(project_folder, read_records):
             if not matches:
                 raise ValueError("External DSS selector matches no cataloged pathname")
             for pathname in matches:
-                if record["kind"] == "grid":
-                    from ras_commander.dss import RasDss
-
-                    RasDss.read_grid(dss_path, pathname)
-                else:
-                    frame = HmsDss.read_timeseries(dss_path, pathname)
-                    if frame.empty:
-                        raise ValueError(
-                            f"External DSS record has no values: {pathname}"
-                        )
+                frame = HmsDss.read_timeseries(dss_path, pathname)
+                if frame.empty:
+                    raise ValueError(f"External DSS record has no values: {pathname}")
                 record["records_read"] += 1
             record["status"] = "passed"
         except Exception as error:
             # An intentional per-reference boundary preserves every failing
             # identity while allowing the remaining input inventory to finish.
             record["issues"].append(f"{type(error).__name__}: {error}")
+    if grids:
+        try:
+            outcomes = _read_grid_references(grids)
+        except Exception as error:
+            for grid in grids:
+                references[grid["reference_index"]]["issues"].append(
+                    f"{type(error).__name__}: {error}"
+                )
+        else:
+            for outcome in outcomes:
+                record = references[outcome["reference_index"]]
+                record.update(
+                    {
+                        key: value
+                        for key, value in outcome.items()
+                        if key != "reference_index"
+                    }
+                )
     return {
         "scope": "all-declared-gage-and-grid-inputs",
         "read_records": read_records,

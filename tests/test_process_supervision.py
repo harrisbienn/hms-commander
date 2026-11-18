@@ -46,8 +46,16 @@ def test_dss_children_receive_explicit_trust_policy_without_ambient_secrets(
 ):
     from hms_commander._process import dss_environment
 
+    parent_directory = tmp_path / "parent"
+    child_directory = tmp_path / "worker"
+    parent_directory.mkdir()
+    child_directory.mkdir()
+    monkeypatch.chdir(parent_directory)
     monkeypatch.setenv("HMS_DSS_TRUST_MANIFEST", "fixture-approved-trust.json")
     monkeypatch.setenv("HMS_DSS_ALLOW_DOWNLOADS", "0")
+    monkeypatch.setenv("RAS_DSS_TRUST_MANIFEST", "fixture-ras-trust.json")
+    monkeypatch.setenv("RAS_DSS_CACHE_DIR", "fixture-ras-cache")
+    monkeypatch.setenv("RAS_DSS_ALLOW_DOWNLOADS", "0")
     monkeypatch.setenv("HMS_SYNTHETIC_SECRET", "fixture-only-secret")
     outcome = run_owned(
         [
@@ -55,20 +63,48 @@ def test_dss_children_receive_explicit_trust_policy_without_ambient_secrets(
             "-I",
             "-c",
             "import os,json; print(json.dumps({"
-            "'trust':os.environ.get('HMS_DSS_TRUST_MANIFEST')=='fixture-approved-trust.json',"
+            "'cwd':os.getcwd(),"
+            "'trust':os.environ.get('HMS_DSS_TRUST_MANIFEST'),"
             "'download_policy':os.environ.get('HMS_DSS_ALLOW_DOWNLOADS')=='0',"
+            "'ras_trust':os.environ.get('RAS_DSS_TRUST_MANIFEST'),"
+            "'ras_cache':os.environ.get('RAS_DSS_CACHE_DIR'),"
+            "'ras_download_policy':os.environ.get('RAS_DSS_ALLOW_DOWNLOADS')=='0',"
             "'secret_absent':'HMS_SYNTHETIC_SECRET' not in os.environ}))",
         ],
-        cwd=tmp_path,
+        cwd=child_directory,
         env=dss_environment(),
         timeout=10,
         output_dir=tmp_path,
     )
     assert json.loads(outcome.stdout) == {
-        "trust": True,
+        "cwd": str(child_directory),
+        "trust": str(parent_directory / "fixture-approved-trust.json"),
         "download_policy": True,
+        "ras_trust": str(parent_directory / "fixture-ras-trust.json"),
+        "ras_cache": str(parent_directory / "fixture-ras-cache"),
+        "ras_download_policy": True,
         "secret_absent": True,
     }
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["HMS_DSS_TRUST_MANIFEST", "RAS_DSS_TRUST_MANIFEST", "RAS_DSS_CACHE_DIR"],
+)
+@pytest.mark.parametrize("value", [None, ""])
+def test_dss_environment_preserves_unselected_paths(monkeypatch, name, value):
+    from hms_commander._process import dss_environment
+
+    if value is None:
+        monkeypatch.delenv(name, raising=False)
+    else:
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("HMS_DSS_ALLOW_DOWNLOADS", "1")
+    monkeypatch.setenv("RAS_DSS_ALLOW_DOWNLOADS", "0")
+    environment = dss_environment()
+    assert environment.get(name) == value
+    assert environment["HMS_DSS_ALLOW_DOWNLOADS"] == "1"
+    assert environment["RAS_DSS_ALLOW_DOWNLOADS"] == "0"
 
 
 def test_output_limits_preserve_full_stream_markers(tmp_path):

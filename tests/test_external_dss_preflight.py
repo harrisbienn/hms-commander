@@ -2,6 +2,8 @@
 
 import pandas as pd
 import pytest
+from pathlib import Path
+from types import SimpleNamespace
 
 from hms_commander import HmsGage
 from hms_commander.HmsPrj import HmsPrj
@@ -19,6 +21,30 @@ def inputs(tmp_path):
         "     DSS Pathname: /A/B/FLOW//1HOUR/F/\n     End Variant: Main\nEnd:\n"
     )
     return tmp_path, gage
+
+
+@pytest.fixture
+def grid_worker(tmp_path, monkeypatch):
+    """Exercise the private protocol while substituting only process/native I/O."""
+    from hms_commander import _grid_preflight
+
+    attempt = tmp_path / "grid-attempt"
+    attempt.mkdir()
+    monkeypatch.setattr(
+        _grid_preflight.tempfile, "mkdtemp", lambda **kwargs: str(attempt)
+    )
+
+    def run(command, **kwargs):
+        assert command[1:4] == ["-I", "-m", "hms_commander._grid_preflight"]
+        status = _grid_preflight.run(
+            Path(command[command.index("--request") + 1]),
+            Path(command[command.index("--result") + 1]),
+        )
+        return SimpleNamespace(returncode=status, timed_out=False, quiescent=True)
+
+    monkeypatch.setattr(_grid_preflight, "run_owned", run)
+    monkeypatch.setattr(_grid_preflight, "require_ras_dss_policy", lambda: None)
+    return attempt
 
 
 def test_legacy_aliases_match_project_and_gage_apis(inputs):
@@ -96,10 +122,9 @@ def test_inputs_fail_closed_with_exact_identity(inputs, monkeypatch, failure):
 
 @pytest.mark.parametrize("corrupt", [False, True])
 def test_grid_preflight_delegates_exact_reads_and_reports_decompression(
-    inputs, monkeypatch, corrupt
+    inputs, monkeypatch, corrupt, grid_worker
 ):
     import sys
-    from types import SimpleNamespace
 
     folder, gage = inputs
     gage.unlink()
@@ -108,7 +133,9 @@ def test_grid_preflight_delegates_exact_reads_and_reports_decompression(
         "     Filename: input.dss\n     Pathname: /A/B/PRECIP///F/\nEnd:\n"
     )
     exact = "/A/B/PRECIP/01JAN2020/02JAN2020/F/"
-    monkeypatch.setattr(HmsDss, "get_catalog", lambda *args: [exact])
+    monkeypatch.setattr(
+        HmsDss, "get_catalog", lambda *args: pytest.fail("Grid used local HMS catalog")
+    )
     reads = []
 
     def read(path, selector):
@@ -120,7 +147,12 @@ def test_grid_preflight_delegates_exact_reads_and_reports_decompression(
     monkeypatch.setitem(
         sys.modules,
         "ras_commander.dss",
-        SimpleNamespace(RasDss=SimpleNamespace(read_grid=read)),
+        SimpleNamespace(
+            RasDss=SimpleNamespace(
+                get_catalog=lambda *args: pd.DataFrame({"pathname": [exact]}),
+                read_grid=read,
+            )
+        ),
     )
     report = preflight(folder, True)
     assert reads == [exact]
@@ -128,6 +160,91 @@ def test_grid_preflight_delegates_exact_reads_and_reports_decompression(
     assert report["references"][0]["matched_pathnames"] == [exact]
     if corrupt:
         assert "decompression failed" in report["references"][0]["issues"][0]
+
+
+def test_mixed_gage_and_grid_preflight_does_not_reuse_hms_grid_catalog(
+    inputs, monkeypatch, grid_worker
+):
+    """A grid read must follow its RAS owner's catalog, not an HMS JVM call."""
+    import sys
+
+    folder, _ = inputs
+    (folder / "project.grid").write_text(
+        "Grid: Rain\n     Data Source Type: External DSS\n"
+        "     Filename: input.dss\n     Pathname: /A/B/PRECIP///F/\nEnd:\n"
+    )
+    flow = "/A/B/FLOW/01JAN2020/1HOUR/F/"
+    grid = "/A/B/PRECIP/01JAN2020/02JAN2020/F/"
+    calls = []
+    monkeypatch.setattr(HmsDss, "get_catalog", lambda *args: [flow, grid])
+    monkeypatch.setattr(
+        HmsDss, "read_timeseries", lambda *args: pd.DataFrame({"value": [1]})
+    )
+
+    def grid_catalog(path):
+        calls.append("ras-catalog")
+        return pd.DataFrame({"pathname": [grid]})
+
+    def grid_read(path, selector):
+        assert calls == ["ras-catalog"], "Grid inherited an HMS catalog/runtime"
+        calls.append(selector)
+        return {"data": [[1.0]]}
+
+    monkeypatch.setitem(
+        sys.modules,
+        "ras_commander.dss",
+        SimpleNamespace(
+            RasDss=SimpleNamespace(get_catalog=grid_catalog, read_grid=grid_read)
+        ),
+    )
+    report = preflight(folder, True)
+    assert report["passed"], report
+    assert calls == ["ras-catalog", grid]
+
+
+@pytest.mark.parametrize("read_records", [False, True])
+def test_grid_batch_failure_retains_every_reference_and_gage_outcome(
+    inputs, monkeypatch, read_records
+):
+    from hms_commander import _external_dss
+
+    folder, _ = inputs
+    (folder / "project.grid").write_text(
+        "".join(
+            f"Grid: {name}\n     Data Source Type: External DSS\n"
+            f"     Filename: input.dss\n     Pathname: /A/{name}/PRECIP///F/\nEnd:\n"
+            for name in ["ONE", "TWO"]
+        )
+    )
+    monkeypatch.setattr(
+        HmsDss, "get_catalog", lambda *args: ["/A/B/FLOW/01JAN2020/1HOUR/F/"]
+    )
+    monkeypatch.setattr(
+        HmsDss, "read_timeseries", lambda *args: pd.DataFrame({"value": [1]})
+    )
+    requests = []
+
+    def read_grids(references):
+        assert read_records, "Inventory-only preflight launched a native child"
+        requests.append(references)
+        raise RuntimeError("Synthetic worker timeout; evidence retained")
+
+    monkeypatch.setattr(_external_dss, "_read_grid_references", read_grids)
+    report = preflight(folder, read_records)
+    assert not report["passed"]
+    assert len(report["references"]) == 3
+    gage, *grids = report["references"]
+    assert gage["status"] == ("passed" if read_records else "unverified")
+    assert [grid["pathname"] for grid in grids] == [
+        "/A/ONE/PRECIP///F/",
+        "/A/TWO/PRECIP///F/",
+    ]
+    for grid in grids:
+        assert grid["status"] == ("failed" if read_records else "unverified")
+        assert grid["records_read"] == 0 and grid["matched_pathnames"] == []
+        if read_records:
+            assert "Synthetic worker timeout" in grid["issues"][0]
+    assert len(requests) == int(read_records)
 
 
 @pytest.mark.parametrize("kind", ["Gage", "Grid"])

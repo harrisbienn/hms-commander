@@ -79,14 +79,28 @@ def native_environment(additions=None):
 
 
 def dss_environment():
-    """Pass only explicit DSS trust policy in addition to native necessities."""
-    return native_environment(
-        {
-            key: os.environ[key]
-            for key in ("HMS_DSS_TRUST_MANIFEST", "HMS_DSS_ALLOW_DOWNLOADS")
-            if key in os.environ
-        }
-    )
+    """Forward explicit HMS/RAS DSS policy without enabling downloads implicitly."""
+    policy = {
+        key: os.environ[key]
+        for key in (
+            "HMS_DSS_TRUST_MANIFEST",
+            "HMS_DSS_ALLOW_DOWNLOADS",
+            "RAS_DSS_CACHE_DIR",
+            "RAS_DSS_TRUST_MANIFEST",
+            "RAS_DSS_ALLOW_DOWNLOADS",
+        )
+        if key in os.environ
+    }
+    for key in (
+        "HMS_DSS_TRUST_MANIFEST",
+        "RAS_DSS_TRUST_MANIFEST",
+        "RAS_DSS_CACHE_DIR",
+    ):
+        if policy.get(key):
+            # Child workers change cwd. Preserve the caller's selected location
+            # without resolving links that the native owner must still reject.
+            policy[key] = os.path.abspath(policy[key])
+    return native_environment(policy)
 
 
 class _WindowsJob:

@@ -12,6 +12,8 @@ from typing import Any
 
 import numpy as np
 
+from ._dss_runtime import require_ras_dss_policy
+
 SCHEMA = "hms-commander/grid-writer-request/1.0"
 RESULT_SCHEMA = "hms-commander/grid-writer-result/1.0"
 
@@ -82,6 +84,7 @@ def run(request_path: str | Path, result_path: str | Path) -> int:
         output = Path(str(request["output_dss"])).resolve()
         if output.exists():
             raise FileExistsError(f"Refusing to overwrite grid DSS: {output}")
+        require_ras_dss_policy()
         output.parent.mkdir(parents=True, exist_ok=True)
         from ras_commander import RasDss
 

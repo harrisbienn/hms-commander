@@ -5,6 +5,7 @@ import importlib.resources
 import json
 from pathlib import Path
 import subprocess
+import sys
 import sysconfig
 
 import hms_commander
@@ -56,9 +57,17 @@ def main() -> None:
             timeout=30,
         )
         assert "--request" in completed.stdout and "--result" in completed.stdout
+    completed = subprocess.run(
+        [sys.executable, "-I", "-m", "hms_commander._grid_preflight", "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert "--request" in completed.stdout and "--result" in completed.stdout
     print(
         f"hms-commander {distribution.version}: "
-        f"{len(schemas)} schemas and 3 worker entry points verified"
+        f"{len(schemas)} schemas, 3 worker entry points and grid preflight module verified"
     )
 
 

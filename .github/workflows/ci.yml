@@ -44,8 +44,8 @@ jobs:
           tests/test_hms_examples.py tests/test_m3_intake.py tests/test_scenario.py tests/test_scenario_worker.py
           tests/test_timeseries_worker.py tests/test_handoff_worker.py
           tests/test_results_products.py tests/test_boundary_transformer.py
-          tests/test_process_supervision.py tests/test_monolith_integrity.py
-          tests/test_external_dss_preflight.py tests/test_gage.py
+          tests/test_process_supervision.py tests/test_monolith_integrity.py tests/test_dss_runtime_boundary.py
+          tests/test_external_dss_preflight.py tests/test_grid_preflight_worker.py tests/test_gage.py
           -m "not requires_hms and not local_hms and not requires_java and not requires_gis and not requires_network and not slow"
       - run: python -m pip check
       - run: python -m pip freeze --all
@@ -60,6 +60,7 @@ jobs:
     env:
       CI: '1'
       HMS_DSS_ALLOW_DOWNLOADS: '0'
+      RAS_DSS_ALLOW_DOWNLOADS: '0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
