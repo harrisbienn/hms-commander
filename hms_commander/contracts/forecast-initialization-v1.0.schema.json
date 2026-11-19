@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "hms-commander/forecast-initialization/1.0",
+  "title": "Provisional static initialization plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "method",
+    "disposition",
+    "valid_at",
+    "model_manifest_sha256",
+    "engine_sha256",
+    "forcing_sha256",
+    "forcing_pathname",
+    "clock",
+    "warm_up",
+    "predecessor",
+    "observed_state_equivalent",
+    "forecast_eligible"
+  ],
+  "properties": {
+    "schema": {
+      "const": "hms-commander/forecast-initialization/1.0"
+    },
+    "method": {
+      "const": "static"
+    },
+    "disposition": {
+      "const": "provisional-static"
+    },
+    "valid_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:00(?:Z|\\+00:00)$"
+    },
+    "model_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "engine_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "forcing_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "forcing_pathname": {
+      "type": "string",
+      "minLength": 1
+    },
+    "clock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "physical_time_zone",
+        "model_wall_time_zone",
+        "forcing_time_zone",
+        "time_shift"
+      ],
+      "properties": {
+        "physical_time_zone": {
+          "const": "UTC"
+        },
+        "model_wall_time_zone": {
+          "const": "UTC"
+        },
+        "forcing_time_zone": {
+          "const": "UTC"
+        },
+        "time_shift": {
+          "const": "none"
+        }
+      }
+    },
+    "warm_up": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "start",
+            "end",
+            "forcing_sha256"
+          ],
+          "properties": {
+            "start": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:00(?:Z|\\+00:00)$"
+            },
+            "end": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:00(?:Z|\\+00:00)$"
+            },
+            "forcing_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    "predecessor": {
+      "type": "null"
+    },
+    "observed_state_equivalent": {
+      "const": false
+    },
+    "forecast_eligible": {
+      "const": false
+    }
+  }
+}

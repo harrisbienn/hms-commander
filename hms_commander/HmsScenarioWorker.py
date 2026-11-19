@@ -27,6 +27,7 @@ from .HmsScenario import HmsRunArtifact, HmsScenario
 from .HmsSpatialTransfer import HmsSpatialTransfer
 from .HmsSubbasinTransfer import HmsSubbasinTransfer
 from .LoggingConfig import get_logger
+from . import _forecast_initialization
 
 logger = get_logger(__name__)
 
@@ -60,7 +61,9 @@ class HmsScenarioWorker:
     CENTER_REQUEST_SCHEMA = "hms-commander/scenario-worker-request/1.1"
     DELIVERED_REQUEST_SCHEMA = "hms-commander/scenario-worker-request/1.2"
     SOURCE_RUN_REQUEST_SCHEMA = "hms-commander/scenario-worker-request/1.3"
+    FORECAST_REQUEST_SCHEMA = "hms-commander/scenario-worker-request/1.4"
     RESULT_SCHEMA = "hms-commander/scenario-worker-result/1.0"
+    FORECAST_RESULT_SCHEMA = "hms-commander/scenario-worker-result/1.1"
 
     @staticmethod
     @log_call
@@ -95,14 +98,24 @@ class HmsScenarioWorker:
 
         try:
             request = HmsScenarioWorker._load_request(request_file)
+            if request.get("schema") == HmsScenarioWorker.FORECAST_REQUEST_SCHEMA:
+                request = _forecast_initialization._json(request_file)
             request = HmsScenarioWorker._validate_request(request)
             request_sha256 = _json_sha256(request)
+            initialization = None
+            if request["schema"] == HmsScenarioWorker.FORECAST_REQUEST_SCHEMA:
+                HmsScenarioWorker._verify_input_identities(request)
+                initialization = _forecast_initialization.verify_source(request)
 
             if result_file.exists():
                 HmsScenarioWorker._verify_completed_result(
                     result_file,
                     request_sha256=request_sha256,
                     specification_sha256=request["scenario"]["specification_sha256"],
+                    initialization=initialization,
+                    initialization_request=(
+                        request if initialization is not None else None
+                    ),
                 )
                 logger.info(
                     "Verified existing HMS worker result for request %s",
@@ -167,7 +180,10 @@ class HmsScenarioWorker:
                 "checks": checks,
                 "workspace": workspace.to_dict(),
             }
-            if request["schema"] == HmsScenarioWorker.SOURCE_RUN_REQUEST_SCHEMA:
+            if request["schema"] in {
+                HmsScenarioWorker.SOURCE_RUN_REQUEST_SCHEMA,
+                HmsScenarioWorker.FORECAST_REQUEST_SCHEMA,
+            }:
                 if workspace.run_name != source_model["run"]:
                     raise HmsScenarioWorkerError(
                         "Prepared run does not preserve the requested source run identity",
@@ -179,6 +195,11 @@ class HmsScenarioWorker:
                     "source_run": source_model["run"],
                     "prepared_run": workspace.run_name,
                 }
+
+            if initialization is not None:
+                preparation["initialization"] = _forecast_initialization.verify_prepared(
+                    request, initialization, workspace
+                )
 
             execution_started = time.perf_counter()
             execution = {"status": "in_progress"}
@@ -374,6 +395,13 @@ class HmsScenarioWorker:
                     evidence_key
                 ]
 
+            if initialization is not None:
+                preparation["retained_initialization"] = (
+                    _forecast_initialization.verify_prepared(
+                        request, initialization, workspace
+                    )
+                )
+
             result = HmsScenarioWorker._result_payload(
                 request=request,
                 request_sha256=request_sha256,
@@ -474,6 +502,8 @@ class HmsScenarioWorker:
             "execution",
         }
         optional = {"gage_inputs", "spatial_transfer"}
+        if payload.get("schema") == HmsScenarioWorker.FORECAST_REQUEST_SCHEMA:
+            required.add("initialization")
         missing = sorted(required - set(payload))
         unknown = sorted(set(payload) - required - optional)
         if missing or unknown:
@@ -492,6 +522,7 @@ class HmsScenarioWorker:
             HmsScenarioWorker.CENTER_REQUEST_SCHEMA,
             HmsScenarioWorker.DELIVERED_REQUEST_SCHEMA,
             HmsScenarioWorker.SOURCE_RUN_REQUEST_SCHEMA,
+            HmsScenarioWorker.FORECAST_REQUEST_SCHEMA,
         }:
             raise HmsScenarioWorkerError(
                 f"Unsupported HMS worker request schema: {payload['schema']!r}",
@@ -513,9 +544,10 @@ class HmsScenarioWorker:
         )
 
         source_model = _object(payload["source_model"], "source_model")
-        preserve_source_run = (
-            payload["schema"] == HmsScenarioWorker.SOURCE_RUN_REQUEST_SCHEMA
-        )
+        preserve_source_run = payload["schema"] in {
+            HmsScenarioWorker.SOURCE_RUN_REQUEST_SCHEMA,
+            HmsScenarioWorker.FORECAST_REQUEST_SCHEMA,
+        }
         _require_keys(
             source_model,
             required={"project", "project_file_sha256", "run", "grid"}
@@ -544,7 +576,7 @@ class HmsScenarioWorker:
         if preserve_source_run:
             if source_model["run_name_policy"] != "preserve-source":
                 raise HmsScenarioWorkerError(
-                    "request 1.3 requires source_model.run_name_policy='preserve-source'",
+                    "request 1.3 or later requires source_model.run_name_policy='preserve-source'",
                     classification="invalid_request",
                     exit_code=2,
                 )
@@ -632,6 +664,10 @@ class HmsScenarioWorker:
         )
         start = _parse_model_time(model_window["start"])
         end = _parse_model_time(model_window["end"])
+        if payload["schema"] == HmsScenarioWorker.FORECAST_REQUEST_SCHEMA and (
+            start.second or start.microsecond or end.second or end.microsecond
+        ):
+            raise ValueError("Forecast initialization requires whole-minute model times")
         if end <= start:
             raise HmsScenarioWorkerError(
                 "model_window.end must be later than model_window.start",
@@ -668,6 +704,7 @@ class HmsScenarioWorker:
             ) == HmsSubbasinTransfer.DELIVERED_METHOD and payload["schema"] not in {
                 HmsScenarioWorker.DELIVERED_REQUEST_SCHEMA,
                 HmsScenarioWorker.SOURCE_RUN_REQUEST_SCHEMA,
+                HmsScenarioWorker.FORECAST_REQUEST_SCHEMA,
             }:
                 raise HmsScenarioWorkerError(
                     "delivered-centroid transfer requires request 1.2 or later",
@@ -830,6 +867,10 @@ class HmsScenarioWorker:
             normalized_request["gage_inputs"] = normalized_gage_inputs
         if normalized_transfer is not None:
             normalized_request["spatial_transfer"] = normalized_transfer
+        if payload["schema"] == HmsScenarioWorker.FORECAST_REQUEST_SCHEMA:
+            normalized_request["initialization"] = _forecast_initialization.normalize(
+                payload["initialization"]
+            )
         return normalized_request
 
     @staticmethod
@@ -1156,6 +1197,8 @@ class HmsScenarioWorker:
         *,
         request_sha256: str,
         specification_sha256: str,
+        initialization: Optional[Dict[str, Any]] = None,
+        initialization_request: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         try:
             result = json.loads(result_path.read_text(encoding="utf-8"))
@@ -1167,7 +1210,12 @@ class HmsScenarioWorker:
             ) from exc
         matches = (
             isinstance(result, dict)
-            and result.get("schema") == HmsScenarioWorker.RESULT_SCHEMA
+            and result.get("schema")
+            == (
+                HmsScenarioWorker.FORECAST_RESULT_SCHEMA
+                if initialization is not None
+                else HmsScenarioWorker.RESULT_SCHEMA
+            )
             and result.get("status") == "succeeded"
             and result.get("request", {}).get("sha256") == request_sha256
             and result.get("scenario", {}).get("specification_sha256")
@@ -1178,6 +1226,12 @@ class HmsScenarioWorker:
                 "Existing HMS worker result is not an identical completed request",
                 classification="existing_result_conflict",
                 exit_code=3,
+            )
+        if initialization is not None:
+            if result.get("request", {}).get("schema") != HmsScenarioWorker.FORECAST_REQUEST_SCHEMA:
+                raise ValueError("Retained initialization request schema differs")
+            _forecast_initialization.verify_reuse(
+                initialization_request, result, initialization
             )
         for label, identity in (
             ("output DSS", result.get("output_dss")),
@@ -1284,7 +1338,12 @@ class HmsScenarioWorker:
         complete_timings = dict(timings)
         complete_timings["total_seconds"] = _elapsed(started_clock)
         return {
-            "schema": HmsScenarioWorker.RESULT_SCHEMA,
+            "schema": (
+                HmsScenarioWorker.FORECAST_RESULT_SCHEMA
+                if request
+                and request.get("schema") == HmsScenarioWorker.FORECAST_REQUEST_SCHEMA
+                else HmsScenarioWorker.RESULT_SCHEMA
+            ),
             "status": status,
             "scenario": {
                 "scenario_id": scenario.get("scenario_id"),

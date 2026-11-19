@@ -1,0 +1,714 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "hms-commander/scenario-worker-result/1.1",
+  "title": "HMS Commander scenario worker result 1.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "status",
+    "scenario",
+    "request",
+    "preparation",
+    "execution",
+    "output_dss",
+    "products",
+    "raw_qualification",
+    "timings",
+    "warnings",
+    "error"
+  ],
+  "properties": {
+    "schema": {
+      "const": "hms-commander/scenario-worker-result/1.1"
+    },
+    "status": {
+      "enum": [
+        "succeeded",
+        "failed"
+      ]
+    },
+    "scenario": {
+      "type": "object"
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "sha256"
+      ],
+      "properties": {
+        "schema": {
+          "const": "hms-commander/scenario-worker-request/1.4"
+        },
+        "sha256": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "preparation": {
+      "type": "object",
+      "properties": {
+        "initialization": {
+          "$ref": "#/$defs/initialization"
+        },
+        "retained_initialization": {
+          "$ref": "#/$defs/initialization"
+        }
+      }
+    },
+    "execution": {
+      "type": "object"
+    },
+    "output_dss": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "products": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "raw_qualification": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "timings": {
+      "type": "object"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "error": {
+      "type": [
+        "object",
+        "null"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "succeeded"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "preparation": {
+            "required": [
+              "initialization",
+              "retained_initialization"
+            ],
+            "properties": {
+              "initialization": {
+                "properties": {
+                  "status": {
+                    "const": "prepared"
+                  }
+                }
+              },
+              "retained_initialization": {
+                "properties": {
+                  "status": {
+                    "const": "prepared"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "initialization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "status",
+        "method",
+        "disposition",
+        "valid_at",
+        "model_manifest_sha256",
+        "initialization_plan_sha256",
+        "model_files",
+        "names",
+        "engine",
+        "forcing",
+        "model_window",
+        "clock",
+        "native_clock",
+        "gage_inputs",
+        "warm_up",
+        "warm_up_status",
+        "predecessor",
+        "observed_state_equivalent",
+        "forecast_eligible"
+      ],
+      "properties": {
+        "schema": {
+          "const": "hms-commander/forecast-initialization-evidence/1.0"
+        },
+        "status": {
+          "enum": [
+            "source_verified",
+            "prepared"
+          ]
+        },
+        "method": {
+          "const": "static"
+        },
+        "disposition": {
+          "const": "provisional-static"
+        },
+        "valid_at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:00(?:Z|\\+00:00)$"
+        },
+        "model_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "initialization_plan_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "model_files": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project",
+            "run",
+            "basin",
+            "met",
+            "control",
+            "grid"
+          ],
+          "properties": {
+            "project": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "run": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "basin": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "met": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "control": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "grid": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          }
+        },
+        "names": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "run",
+            "basin",
+            "met",
+            "control",
+            "grid"
+          ],
+          "properties": {
+            "run": {
+              "type": "string",
+              "minLength": 1
+            },
+            "basin": {
+              "type": "string",
+              "minLength": 1
+            },
+            "met": {
+              "type": "string",
+              "minLength": 1
+            },
+            "control": {
+              "type": "string",
+              "minLength": 1
+            },
+            "grid": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "engine": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "forcing": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dss",
+            "sha256",
+            "pathname"
+          ],
+          "properties": {
+            "dss": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "pathname": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "model_window": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "start",
+            "end",
+            "time_zone",
+            "interval_minutes"
+          ],
+          "properties": {
+            "start": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$"
+            },
+            "end": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$"
+            },
+            "time_zone": {
+              "const": "UTC"
+            },
+            "interval_minutes": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "clock": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "physical_time_zone",
+            "model_wall_time_zone",
+            "forcing_time_zone",
+            "time_shift"
+          ],
+          "properties": {
+            "physical_time_zone": {
+              "const": "UTC"
+            },
+            "model_wall_time_zone": {
+              "const": "UTC"
+            },
+            "forcing_time_zone": {
+              "const": "UTC"
+            },
+            "time_shift": {
+              "const": "none"
+            }
+          }
+        },
+        "native_clock": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "retained_labels",
+            "status",
+            "native_clock_verified"
+          ],
+          "properties": {
+            "retained_labels": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "project",
+                "control",
+                "met"
+              ],
+              "properties": {
+                "project": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "control": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "met": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "status": {
+              "const": "caller-declared"
+            },
+            "native_clock_verified": {
+              "const": false
+            }
+          }
+        },
+        "gage_inputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "gage_name",
+              "dss",
+              "sha256",
+              "pathname"
+            ],
+            "properties": {
+              "gage_name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "dss": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "pathname": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "warm_up": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "start",
+                "end",
+                "forcing_sha256"
+              ],
+              "properties": {
+                "start": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:00(?:Z|\\+00:00)$"
+                },
+                "end": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:00(?:Z|\\+00:00)$"
+                },
+                "forcing_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          ]
+        },
+        "warm_up_status": {
+          "enum": [
+            "declared-not-qualified",
+            "not-requested"
+          ]
+        },
+        "predecessor": {
+          "type": "null"
+        },
+        "observed_state_equivalent": {
+          "const": false
+        },
+        "forecast_eligible": {
+          "const": false
+        },
+        "prepared_files": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project",
+            "run",
+            "basin",
+            "met",
+            "control",
+            "grid"
+          ],
+          "properties": {
+            "project": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "run": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "basin": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "met": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "control": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "grid": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "prepared"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "prepared_files"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "prepared_files"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

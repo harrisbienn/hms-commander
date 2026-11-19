@@ -19,6 +19,125 @@ same canonical request, the worker verifies the output DSS and product-manifest
 checksums and exits successfully without rerunning HMS. A failed attempt keeps
 its workspace and result as evidence; a retry should use a new attempt path.
 
+## Provisional forecast initialization (request 1.4)
+
+Request `hms-commander/scenario-worker-request/1.4` adds explicit provisional
+static initialization and emits result `hms-commander/scenario-worker-result/1.1`.
+Requests 1.0–1.3 and result 1.0 retain their existing behavior. Version 1.4 retains
+the source run name and requires an explicitly selected executable file.
+
+The supported method preserves the selected basin model and meteorologic
+initialization parameters, with exactly one `Save State Type: None` in the
+selected run. Saved/restart states and implicit NWM wetness conversions are not
+supported. Static parameters do not establish equivalence to observed catchment
+state. The receipt always records `disposition="provisional-static"`,
+`observed_state_equivalent=false`, `predecessor=null`, and
+`forecast_eligible=false`; no forecast output becomes a future analysis state.
+HEC-HMS describes basin and meteorologic initial conditions separately from
+optional start states in its [simulation-run documentation](https://www.hec.usace.army.mil/confluence/hmsdocs/hmsum/4.11/hydrologic-simulation/simulation-runs).
+
+Supply two independently selected JSON references under `initialization`:
+
+```json
+{
+  "initialization": {
+    "evidence": {"path": "inputs/initialization-plan.json", "sha256": "<plan SHA-256>"},
+    "model_manifest": {"path": "inputs/initialization-model.json", "sha256": "<manifest SHA-256>"}
+  }
+}
+```
+
+These are fragments; replace the illustrative hashes with actual lowercase
+SHA-256 values. Request paths resolve from the worker's current directory, as in
+the existing worker contract. The packaged schemas define the complete fields:
+
+| Artifact | Schema file | Identity scope |
+|---|---|---|
+| Request | `scenario-worker-request-v1.4.schema.json` | Independent plan and model-manifest references |
+| Plan | `forecast-initialization-v1.0.schema.json` | Physical valid instant, method, model manifest, executable, forcing and optional warm-up |
+| Model manifest | `initialization-model-v1.0.schema.json` | Exact selected project, run, basin, meteorologic, control and grid files and component names |
+| Receipt | `forecast-initialization-evidence-v1.0.schema.json` | Authenticated source identities and, after preparation, selected clone identities |
+| Result | `scenario-worker-result-v1.1.schema.json` | Separate admission and retained post-execution receipts |
+
+The model manifest's file paths are portable paths relative to the source
+project folder. Each identity must match the file actually selected by the
+request and native text references. This manifest authenticates selected HMS
+configuration, **not the entire integrated model package**. The calling
+orchestrator must bind it to its independently approved package tree and other
+required model assets. Similarly, the executable hash identifies one file;
+it does not qualify JVM libraries or the complete installed runtime.
+
+Before running the worker, source admission can be checked without creating a
+workspace, starting an engine, or reading DSS through a native library:
+
+```python
+from hms_commander import HmsForecastInitialization
+
+receipt = HmsForecastInitialization.prepare("request.json", "source-receipt.json")
+evidence = HmsForecastInitialization.verify("request.json", receipt)
+```
+
+`prepare` publishes immutable, complete receipt bytes. An identical existing
+receipt can be reused; a conflicting destination is refused. Concurrent
+publication may also refuse an existing destination; use `verify` to check the
+winner. A receipt with `status="source_verified"` attests source admission only.
+The worker separately verifies actual prepared run references, static parameters,
+control window, interval, and the meteorologic model → grid → staged DSS file
+and exact pathname chain immediately before compute. Preparation may change
+only the scenario wiring, description, requested control times/interval, and
+execution metadata allowed by this contract.
+
+Successful result 1.1 contains `preparation.initialization` with precompute
+identities and `preparation.retained_initialization` with verified post-execution
+identities. This preserves the inputs originally admitted while allowing known
+run execution-date/time updates. Identical-result reuse reauthenticates source
+files, plan, manifest, forcing, explicit gage inputs, executable, prepared
+configuration and the retained snapshot before checking outputs. Changed
+inputs refuse reuse; retained evidence is not overwritten.
+The retained snapshot independently verifies current bytes. Basin, meteorologic,
+control and grid identities must also equal their precompute identities. The
+precompute project/run hashes remain audit records when execution updates their
+metadata; the original bytes are not retained by this API, so those earlier
+hashes cannot be independently reproduced after such updates. The caller must
+retain the external result checksum to authenticate that audit record.
+
+### Physical clock and declared warm-up
+
+Version 1.4 requires whole-minute UTC physical/model timestamps. The plan's
+`valid_at` must equal the model start exactly; earlier and later instants are
+refused. The required `clock` declaration names `physical_time_zone`,
+`model_wall_time_zone`, and `forcing_time_zone` as `UTC`, with `time_shift="none"`.
+This is an explicit caller disposition, not native clock verification.
+
+HEC-HMS describes simulation times as an arbitrary local wall clock without
+daylight-saving adjustment and provides separate precipitation and grid-output
+shifts. See [control specifications (4.9)](https://www.hec.usace.army.mil/confluence/hmsdocs/hmsum/4.9/projects-and-control-specifications/control-specifications)
+and [gridded precipitation time shifts (4.11)](https://www.hec.usace.army.mil/confluence/hmsdocs/hmsum/4.11/meteorology-description/precipitation).
+This API preserves project/control time-zone labels, including non-UTC labels,
+and records them as evidence; it does not infer the computational clock from
+those labels or silently rewrite them. Missing shift fields are retained as
+absence, not evidence of zero native shift. The first supported text grammar
+admits absent precipitation shift controls and absent or exactly zero
+`Grid Write Time Shift` for output grids. Other shift/normalization controls
+and duplicate clock controls are refused pending explicit support.
+
+Every receipt records `native_clock.native_clock_verified=false`. The later
+FloodForecast F10 integration must prove the input records, requested physical
+window, actual selected control text, and output timestamps agree in the
+designated-engine pilot. If the source needs clock preparation, perform it in
+an owner-prepared clone with a new manifest before admission; do not change the
+canonical source. No installed-engine or physical-record clock proof is claimed
+by these portable tests.
+
+An optional `warm_up` object records UTC `start`, `end`, and `forcing_sha256`.
+It must be a nonempty prefix beginning at the model start, ending before the
+model end on the computation interval, and referencing the selected forcing.
+The receipt retains these exact bounds with
+`warm_up_status="declared-not-qualified"`. A whole-file forcing hash proves
+neither observed precipitation in that prefix nor adequate spin-up. F10 must
+bind owner-verified source/observed seam evidence to the declared prefix;
+scientific spin-up and state-equivalence assessment remain separate.
+
 ## Request Contract
 
 The packaged JSON Schema is
