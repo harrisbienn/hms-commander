@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "hms-commander/grid-writer-request/2.0",
+  "title": "grid-writer-request-v2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "source",
+    "expected_domain_sha256",
+    "start",
+    "end",
+    "output_dss",
+    "pathname",
+    "absolute_value_tolerance_mm"
+  ],
+  "properties": {
+    "schema": {
+      "const": "hms-commander/grid-writer-request/2.0"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "expected_domain_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "start": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:00(?:Z|\\+00:00)$"
+    },
+    "end": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:00(?:Z|\\+00:00)$"
+    },
+    "output_dss": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pathname": {
+      "type": "string",
+      "pattern": "^/[^/]+/[^/]+/[^/]+///[^/]+/$"
+    },
+    "absolute_value_tolerance_mm": {
+      "type": "number",
+      "minimum": 0
+    }
+  }
+}

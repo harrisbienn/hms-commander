@@ -53,6 +53,13 @@ def run(request_path: str | Path, result_path: str | Path) -> int:
     result_file = Path(result_path).resolve()
     try:
         request = json.loads(request_file.read_text(encoding="utf-8"))
+        if (
+            isinstance(request, dict)
+            and request.get("schema") == "hms-commander/grid-writer-request/2.0"
+        ):
+            from ._forecast_grid import _run
+
+            return _run(request_file, result_file)
         required = {"schema", "data", "output_dss", "pathname", "times", "grid_info"}
         optional = {"verification"}
         if (
