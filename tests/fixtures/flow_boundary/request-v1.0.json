@@ -1,0 +1,29 @@
+{
+  "schema": "hms-commander/flow-boundary-request/1.0",
+  "operation_id": "fixture-reach-101",
+  "source": {
+    "path": "portable-flow-v1.0.json",
+    "sha256": "aca85441f5ad50d73e920fda07e4a7b72fd81573e2b2fe1ef24ce0914a203f16",
+    "selector": "fixture:nwm-short-range:2026-11-18T00:00:00Z:reach-101"
+  },
+  "model_window": {
+    "start": "2026-11-18T00:00:00Z",
+    "end": "2026-11-18T02:00:00Z",
+    "time_zone": "UTC"
+  },
+  "interval_minutes": 60,
+  "units": "CMS",
+  "unit_policy": "identity",
+  "output_dss": "boundary.dss",
+  "output_pathname": "/FIXTURE/REACH-101/FLOW//1HOUR/CYCLE-20261118T0000/",
+  "routing": {
+    "method": "identity",
+    "mapping_id": "fixture-mapping",
+    "target_boundary_id": "upstream-1",
+    "contribution_id": "exclusive-reach-101"
+  },
+  "alignment_policy": "exact",
+  "missing_value_policy": "reject",
+  "conversion": "identity",
+  "sentinel_threshold": -1e+30
+}
