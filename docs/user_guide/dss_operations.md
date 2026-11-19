@@ -20,19 +20,20 @@ The retained HMS and RAS DSS paths have separate configuration and trust boundar
 | Route | Native owner | Selected policy |
 | --- | --- | --- |
 | `HmsDss`, `HmsDssGrid`, time-series and hydrologic result workers | Local `hms_commander.dss.DssCore` | `HMS_DSS_TRUST_MANIFEST`, `HMS_DSS_ALLOW_DOWNLOADS` |
-| `HmsGridWriterWorker`, launched by `HmsSpatialTransfer` or `HmsSubbasinTransfer` | `ras_commander.RasDss` | `RAS_DSS_CACHE_DIR`, `RAS_DSS_TRUST_MANIFEST`, `RAS_DSS_ALLOW_DOWNLOADS` |
+| `HmsGridWriterWorker`, launched by `HmsSpatialTransfer`, `HmsSubbasinTransfer`, or `HmsForecastGrid` | `ras_commander.RasDss` | `RAS_DSS_CACHE_DIR`, `RAS_DSS_TRUST_MANIFEST`, `RAS_DSS_ALLOW_DOWNLOADS` |
 | `HmsSpatialTransfer.read_fingerprint_cube` | `ras_commander.RasDss`, in the caller process | The same RAS policy settings |
 | External-input grid preflight | `ras_commander.RasDss`, in one isolated child for the grid batch | The same RAS policy settings |
 
 The grid-writer route writes and verifies transfer grids in an isolated child process.
-Both grid launchers use the owned-process boundary, a 600-second timeout, bounded
+Grid launchers use the owned-process boundary, a 600-second default timeout, bounded
 diagnostics and an explicit environment. They refuse a timed-out or unreconciled
 result. The fingerprint reader instead runs in the caller process; it does not
 acquire those child-process controls merely by using the same native owner.
 Both the reader and writer require the companion capability
 `ras-commander/dss-runtime-trust/1.0.0` before native I/O through HMS's shared
 `_dss_runtime` admission helper. An older companion that ignores these settings
-is refused. Request/result schemas remain version 1.0.
+is refused. Existing transfer requests retain version 1.0. Forecast materialization
+uses the explicit version 2.0 contract described below.
 
 `HMS_DSS_*` settings do not configure or authorize the RAS runtime. The environment
 boundary forwards only the listed settings, without adding a download opt-in or
@@ -72,6 +73,108 @@ retiring retained attempts. Portable fixtures prove routing and refusal, while
 actual native compatibility/readback remains under
 [HMS issue 28](https://github.com/harrisbienn/hms-commander/issues/28) and
 [FloodForecast integration F11](https://github.com/harrisbienn/floodforecast/issues/326).
+
+## Complete forecast rainfall grids
+
+`HmsForecastGrid.materialize` turns a prepared, checksum-pinned rainfall array into
+a DSS7 grid series through `HmsGridWriterWorker`. It uses the same RAS native owner,
+trust policy and owned-process controls as the transfer workers. It does not run
+HEC-HMS or HEC-RAS. Install the GIS and DSS extras in the selected worker environment
+and provision an independently reviewed RAS native runtime before materialization.
+
+```python
+from hms_commander import HmsForecastGrid
+
+result = HmsForecastGrid.materialize("request.json", "result.json", timeout=600)
+checked = HmsForecastGrid.verify("request.json", "result.json")
+```
+
+The packaged contracts are `grid-writer-request-v2.0.schema.json`,
+`forecast-grid-source-v1.0.schema.json`, and `grid-writer-result-v2.0.schema.json`.
+Paths inside a request or preparation descriptor resolve against that JSON file's
+directory. An identity contains `path` and the lowercase file `sha256`.
+
+The request pins the source descriptor, an independently selected domain SHA256,
+the complete required UTC `start` and `end`, an output path, a six-part DSS selector
+with blank D/E parts, and `absolute_value_tolerance_mm`. The tolerance is a caller
+decision in millimetres; the worker supplies no scientific acceptance threshold.
+The domain hash is SHA256 of UTF-8 JSON for the descriptor's `domain` object using
+`json.dumps(domain, sort_keys=True, separators=(",", ":"), allow_nan=False)`.
+Select that expected hash from the upstream accepted domain, independently of an
+untrusted request's proposed mask.
+
+The preparation descriptor binds these inputs:
+
+| Field | Required meaning |
+| --- | --- |
+| `data` | Hashed floating-point `.npy` array shaped `(intervals, rows, columns)`; incremental rainfall depth in `MM`, with `PER-CUM` data type |
+| `required_mask` | Hashed boolean `.npy` array shaped `(rows, columns)` |
+| `domain` | Grid shape, square cell size in metres, lower-left origin, projected metre CRS, `south-to-north` row order, sorted required flat cell indices, and hashed owner-domain evidence |
+| `times`, `interval_seconds` | Every boundary in explicit UTC, at whole minutes, with one positive regular interval throughout |
+| `normalization_policy` | Hashed upstream normalization-policy evidence |
+| `segments` | Contiguous `first_frame` / `frame_count` ranges, each binding an `observed` or `forecast` source export; observed ranges precede forecast ranges |
+
+Every required cell must have finite nonnegative rainfall in every interval.
+True zero rainfall remains zero. Every cell outside the mask must be NaN and is
+written as NoData. The mask must equal the domain's required indices; narrowing a
+mask and rehashing its array does not change the independently selected domain.
+The requested window must equal the prepared array window. There is no automatic
+cycle suffix selection, time-zone inference, gap filling, or missing-to-zero rule.
+Any required observed prefix must already cover the same complete domain.
+Native DSS timestamps are timezone-naive representations of UTC. The caller must
+select a model using the same physical clock or supply a separately authenticated
+owner transformation; this API does not shift rainfall to a local model clock.
+
+The descriptor records an upstream projection, not proof that a provider export
+passed its owner's replay checks. For the FloodForecast integration, StormHub
+owns raw-source, full-domain and normalization verification; FloodForecast's F10
+compiler must perform those checks before creating this descriptor. HMS does not
+import StormHub or independently reinterpret its export format. Source exports,
+domain evidence and policy files are authenticated but never modified.
+
+Readback requires exactly one record per interval and no extra catalog records.
+It checks every required value against the declared tolerance, the complete NoData
+mask, native missing counts, shape, units, period data type, CRS, origin, cell size,
+pathname intervals and independent native timing headers. DSS storage uses ZLIB
+compression. Raw-header parsing stays with the pinned RAS owner's
+`_validate_grid_raw_timing` helper; geometry CI uses accepted RAS revision
+`0a662326c67d07fc20fa88e10de9643b13b74827`. A companion update must retain that
+helper contract or replace it with a reviewed public owner API.
+
+The child writes into a unique `.forecast-grid-*` directory. A successful child
+receipt has status `readback_verified`; it is not an accepted product. After the
+child and its descendants exit, the parent hashes the staged DSS and publishes
+the output and `succeeded` result using atomic create-if-absent operations. The
+output filesystem must support hard links. `verify` checks the output checksum,
+all retained inputs, and result semantics without loading Java. An identical retry
+returns the checked accepted result. Changed requests, occupied outputs, attempt
+receipts without acceptance, and active `.lock` reservations are refused.
+
+Failures retain attempt evidence and any staged partial DSS for inspection. Do
+not delete a reservation or reuse an attempt until process ownership is reconciled.
+An unresolved launch or cleanup retains its reservation even without a worker
+receipt. Cleanup warnings after acceptance do not invalidate the accepted product;
+retained reservations still require inspection before another materialize call.
+After reviewing a failed attempt, use fresh result and output paths. A failure
+between output publication and result publication leaves an unaccepted output;
+existence alone never establishes success. Results retain `forecast_eligible = false`.
+
+Portable tests replace only native DSS I/O and the child-launch boundary. They
+exercise real array, mask, metadata, identity, retry and publication checks; they
+do not qualify a native runtime. On a separately authorized host with the reviewed
+HMS package and trusted RAS runtime installed, use a new scratch directory to run:
+
+```powershell
+$env:HMS_GRID_NATIVE_QUALIFICATION = "1"
+python -I -m pytest tests/test_forecast_grid.py -m requires_java --basetemp=work/f06-native-qualification-01
+```
+
+That opt-in test authors synthetic rainfall, checks values and NoData through the
+native owner, and moves the accepted file after child exit to test lock release.
+It fails if the requested runtime is unavailable. Retain the exact package/native
+trust identities and test evidence with the qualification record. Native
+qualification remains open under [HMS issue 60](https://github.com/harrisbienn/hms-commander/issues/60);
+portable tests do not establish HEC model readiness or forecast skill.
 
 ## Local HMS native runtime
 

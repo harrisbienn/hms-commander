@@ -74,13 +74,13 @@ jobs:
       # only after a reviewed RAS change merges, then validate both platforms.
       - run: >-
           python -m pip install . pytest==9.1.1 geopandas shapely pyproj h5py scipy
-          "ras-commander @ git+https://github.com/harrisbienn/ras-commander@904af12cf22b675f89fd9c8103b4e1a0670a56e6"
+          "ras-commander @ git+https://github.com/harrisbienn/ras-commander@0a662326c67d07fc20fa88e10de9643b13b74827"
       - name: Require the deliberate GIS and DSS API dependencies
         run: python -I -c "import geopandas, shapely, pyproj, h5py, scipy; from ras_commander import RasDss"
       - name: Validate geometry, spatial transfer, and grid-worker fixtures
         run: >-
           python -I -m pytest tests/test_subbasin_regions.py
-          tests/test_spatial_transfer.py tests/test_grid_writer_worker.py
+          tests/test_spatial_transfer.py tests/test_grid_writer_worker.py tests/test_forecast_grid.py
           -m "not requires_hms and not local_hms and not requires_java and not requires_network and not slow"
       - run: python -m pip check
       - run: python -m pip freeze --all

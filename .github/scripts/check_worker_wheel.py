@@ -39,6 +39,12 @@ def main() -> None:
         if entry.name.endswith(".schema.json")
     }
     assert required <= schemas.keys(), required - schemas.keys()
+    forecast_schemas = {
+        "grid-writer-request-v2.0.schema.json",
+        "grid-writer-result-v2.0.schema.json",
+        "forecast-grid-source-v1.0.schema.json",
+    }
+    assert forecast_schemas <= schemas.keys(), forecast_schemas - schemas.keys()
     for resource in schemas.values():
         assert isinstance(json.loads(resource.read_text(encoding="utf-8")), dict)
 

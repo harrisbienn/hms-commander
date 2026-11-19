@@ -100,6 +100,7 @@ from .HmsResults import HmsResults
 from .HmsResultsProducts import HmsResultsProducts
 from .HmsBoundaryTransformer import HmsBoundaryTransformer
 from .HmsSpatialTransfer import HmsSpatialTransfer
+from .HmsForecastGrid import HmsForecastGrid
 from .HmsSubbasinTransfer import HmsSubbasinTransfer
 
 # Utilities
@@ -182,6 +183,7 @@ __all__ = [
     "HmsResultsProducts",
     "HmsBoundaryTransformer",
     "HmsSpatialTransfer",
+    "HmsForecastGrid",
     "HmsSubbasinTransfer",
 
     # GIS Operations
