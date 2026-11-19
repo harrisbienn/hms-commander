@@ -1,0 +1,17 @@
+{
+  "schema": "hms-commander/portable-flow-series/1.0",
+  "selector": "fixture:nwm-short-range:2026-11-18T00:00:00Z:reach-101",
+  "units": "CMS",
+  "data_type": "INST-VAL",
+  "interval_minutes": 60,
+  "timestamps": [
+    "2026-11-18T00:00:00Z",
+    "2026-11-18T01:00:00Z",
+    "2026-11-18T02:00:00Z"
+  ],
+  "values": [
+    0,
+    17.5,
+    9.25
+  ]
+}

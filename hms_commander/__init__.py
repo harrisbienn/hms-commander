@@ -92,6 +92,7 @@ from .HmsScenario import HmsScenario, HmsScenarioWorkspace, HmsRunArtifact
 from .HmsScenarioWorker import HmsScenarioWorker, HmsScenarioWorkerError
 from .HmsTimeSeriesWorker import HmsTimeSeriesWorker, HmsTimeSeriesWorkerError
 from .HmsHandoffWorker import HmsHandoffWorker, HmsHandoffWorkerError
+from .HmsFlowBoundaryWorker import HmsFlowBoundaryWorker, HmsFlowBoundaryWorkerError
 
 # DSS and Results (Phase 4)
 from .dss import HmsDss, HmsDssGrid, DssCore
@@ -169,6 +170,8 @@ __all__ = [
     "HmsScenarioWorkerError",
     "HmsTimeSeriesWorker",
     "HmsTimeSeriesWorkerError",
+    "HmsFlowBoundaryWorker",
+    "HmsFlowBoundaryWorkerError",
     "HmsHandoffWorker",
     "HmsHandoffWorkerError",
 

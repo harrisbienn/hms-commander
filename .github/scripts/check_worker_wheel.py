@@ -29,6 +29,9 @@ def main() -> None:
         "timeseries-window-result-v1.0.schema.json",
         "hydrologic-handoff-request-v1.0.schema.json",
         "hydrologic-handoff-result-v1.0.schema.json",
+        "portable-flow-series-v1.0.schema.json",
+        "flow-boundary-request-v1.0.schema.json",
+        "flow-boundary-result-v1.0.schema.json",
     }
     schemas = {
         entry.name: entry
@@ -52,7 +55,13 @@ def main() -> None:
         if entry.group == "console_scripts"
     }
     suffix = ".exe" if sysconfig.get_platform().startswith("win") else ""
-    for name in ("hms-scenario-worker", "hms-timeseries-worker", "hms-handoff-worker"):
+    worker_names = (
+        "hms-scenario-worker",
+        "hms-timeseries-worker",
+        "hms-handoff-worker",
+        "hms-flow-boundary-worker",
+    )
+    for name in worker_names:
         assert callable(entry_points[name].load())
         executable = scripts / (name + suffix)
         completed = subprocess.run(
@@ -73,7 +82,7 @@ def main() -> None:
     assert "--request" in completed.stdout and "--result" in completed.stdout
     print(
         f"hms-commander {distribution.version}: "
-        f"{len(schemas)} schemas, 3 worker entry points and grid preflight module verified"
+        f"{len(schemas)} schemas, {len(worker_names)} worker entry points and grid preflight module verified"
     )
 
 
