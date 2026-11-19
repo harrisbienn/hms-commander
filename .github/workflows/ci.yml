@@ -43,6 +43,7 @@ jobs:
           tests/test_constants.py tests/test_parsing.py tests/test_jython_script_security.py
           tests/test_hms_examples.py tests/test_m3_intake.py tests/test_scenario.py tests/test_scenario_worker.py
           tests/test_timeseries_worker.py tests/test_handoff_worker.py
+          tests/test_flow_boundary_worker.py
           tests/test_results_products.py tests/test_boundary_transformer.py
           tests/test_process_supervision.py tests/test_monolith_integrity.py tests/test_dss_runtime_boundary.py
           tests/test_external_dss_preflight.py tests/test_grid_preflight_worker.py tests/test_gage.py

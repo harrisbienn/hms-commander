@@ -1,0 +1,263 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hms-commander.readthedocs.io/contracts/flow-boundary-result-v1.0.schema.json",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "status",
+        "request_sha256",
+        "operation_id",
+        "source_selector",
+        "model_window",
+        "routing",
+        "output_dss",
+        "output_pathname",
+        "data_type",
+        "interval_minutes",
+        "alignment_policy",
+        "missing_value_policy",
+        "conversion",
+        "readback",
+        "output_sha256",
+        "output_bytes",
+        "created_at",
+        "forecast_eligible",
+        "preparation_source_sha256",
+        "native_units",
+        "source_units",
+        "unit_policy"
+      ],
+      "properties": {
+        "schema": {
+          "const": "hms-commander/flow-boundary-result/1.0"
+        },
+        "status": {
+          "const": "succeeded"
+        },
+        "request_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "operation_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_selector": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_window": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "start",
+            "end",
+            "time_zone"
+          ],
+          "properties": {
+            "start": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "end": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "time_zone": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "routing": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "method",
+            "mapping_id",
+            "target_boundary_id",
+            "contribution_id"
+          ],
+          "properties": {
+            "method": {
+              "const": "identity"
+            },
+            "mapping_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "target_boundary_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "contribution_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "output_dss": {
+          "type": "string",
+          "minLength": 1
+        },
+        "output_pathname": {
+          "type": "string",
+          "minLength": 1
+        },
+        "data_type": {
+          "const": "INST-VAL"
+        },
+        "interval_minutes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "alignment_policy": {
+          "const": "exact"
+        },
+        "missing_value_policy": {
+          "const": "reject"
+        },
+        "conversion": {
+          "const": "identity"
+        },
+        "readback": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "endpoint_semantics",
+            "sample_count",
+            "ordinate_sha256",
+            "physical_timestamp_sha256",
+            "model_timestamp_sha256",
+            "model_start",
+            "model_end"
+          ],
+          "properties": {
+            "status": {
+              "const": "verified"
+            },
+            "endpoint_semantics": {
+              "const": "inclusive_instantaneous"
+            },
+            "sample_count": {
+              "type": "integer",
+              "minimum": 2,
+              "maximum": 100000
+            },
+            "ordinate_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "physical_timestamp_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "model_timestamp_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "model_start": {
+              "type": "string",
+              "minLength": 1
+            },
+            "model_end": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "output_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "output_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "forecast_eligible": {
+          "const": false
+        },
+        "preparation_source_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "native_units": {
+          "enum": [
+            "CMS",
+            "CFS"
+          ]
+        },
+        "source_units": {
+          "enum": [
+            "CMS",
+            "CFS",
+            "m3/s"
+          ]
+        },
+        "unit_policy": {
+          "enum": [
+            "identity",
+            "m3/s-to-CMS-alias"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "status",
+        "request_sha256",
+        "classification",
+        "message",
+        "forecast_eligible",
+        "diagnostics_directory"
+      ],
+      "properties": {
+        "schema": {
+          "const": "hms-commander/flow-boundary-result/1.0"
+        },
+        "status": {
+          "const": "failed"
+        },
+        "request_sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "classification": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "forecast_eligible": {
+          "const": false
+        },
+        "diagnostics_directory": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  ]
+}

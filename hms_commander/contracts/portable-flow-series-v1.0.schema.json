@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hms-commander.readthedocs.io/contracts/portable-flow-series-v1.0.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "selector",
+    "units",
+    "data_type",
+    "interval_minutes",
+    "timestamps",
+    "values"
+  ],
+  "properties": {
+    "schema": {
+      "const": "hms-commander/portable-flow-series/1.0"
+    },
+    "selector": {
+      "type": "string",
+      "minLength": 1
+    },
+    "units": {
+      "enum": [
+        "CMS",
+        "CFS",
+        "m3/s"
+      ]
+    },
+    "data_type": {
+      "const": "INST-VAL"
+    },
+    "interval_minutes": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "timestamps": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 100000,
+      "items": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "values": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 100000,
+      "items": {
+        "type": "number"
+      }
+    }
+  }
+}

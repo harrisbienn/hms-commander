@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hms-commander.readthedocs.io/contracts/flow-boundary-request-v1.0.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "operation_id",
+    "source",
+    "model_window",
+    "interval_minutes",
+    "units",
+    "output_dss",
+    "output_pathname",
+    "routing",
+    "alignment_policy",
+    "missing_value_policy",
+    "conversion",
+    "sentinel_threshold",
+    "unit_policy"
+  ],
+  "properties": {
+    "schema": {
+      "const": "hms-commander/flow-boundary-request/1.0"
+    },
+    "operation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "selector"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "selector": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "model_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "end",
+        "time_zone"
+      ],
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "end": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "time_zone": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "interval_minutes": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "units": {
+      "enum": [
+        "CMS",
+        "CFS"
+      ]
+    },
+    "output_dss": {
+      "type": "string",
+      "minLength": 1
+    },
+    "output_pathname": {
+      "type": "string",
+      "minLength": 1
+    },
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "mapping_id",
+        "target_boundary_id",
+        "contribution_id"
+      ],
+      "properties": {
+        "method": {
+          "const": "identity"
+        },
+        "mapping_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_boundary_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contribution_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "alignment_policy": {
+      "const": "exact"
+    },
+    "missing_value_policy": {
+      "const": "reject"
+    },
+    "conversion": {
+      "const": "identity"
+    },
+    "sentinel_threshold": {
+      "type": "number",
+      "exclusiveMaximum": 0
+    },
+    "unit_policy": {
+      "enum": [
+        "identity",
+        "m3/s-to-CMS-alias"
+      ]
+    }
+  }
+}
