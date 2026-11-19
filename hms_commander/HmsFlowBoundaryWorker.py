@@ -15,7 +15,6 @@ import math
 import os
 import re
 import shutil
-import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,7 +34,7 @@ from .HmsTimeSeriesWorker import (
     _timestamp_sha256,
     _validate_wall_clock_index,
 )
-from ._process import dss_environment, run_owned
+from ._process import _isolated_worker_command, dss_environment, run_owned
 from .dss import DssCore
 
 logger = logging.getLogger(__name__)
@@ -231,22 +230,13 @@ class HmsFlowBoundaryWorker:
         _publish_json(child_request, request)
         # Bind the child to this installed/source package, not a roaming-user
         # install or cwd. run_owned bounds and terminates the entire process tree.
-        bootstrap = (
-            "import sys; sys.path.insert(0, sys.argv.pop(1)); "
-            "from hms_commander.HmsFlowBoundaryWorker import _child_main; "
-            "raise SystemExit(_child_main())"
-        )
         completed = run_owned(
-            [
-                sys.executable,
-                "-I",
-                "-c",
-                bootstrap,
-                str(Path(__file__).resolve().parents[1]),
+            _isolated_worker_command(
+                "flow-boundary",
                 str(child_request),
                 str(output),
                 str(child_result),
-            ],
+            ),
             timeout=300,
             cwd=output.parent,
             output_dir=output.parent,

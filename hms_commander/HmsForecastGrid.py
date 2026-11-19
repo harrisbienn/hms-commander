@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +20,7 @@ from ._forecast_grid import (
     _sha256,
     _write_new,
 )
-from ._process import dss_environment, run_owned
+from ._process import _isolated_worker_command, dss_environment, run_owned
 
 logger = logging.getLogger(__name__)
 
@@ -218,19 +217,13 @@ class HmsForecastGrid:
             # resources. Keep the reservation until quiescence is established.
             release_reservation = False
             completed = run_owned(
-                [
-                    sys.executable,
-                    "-I",
-                    "-c",
-                    "import sys; sys.path.insert(0, "
-                    + repr(str(Path(__file__).resolve().parents[1]))
-                    + "); from hms_commander.HmsGridWriterWorker import main; "
-                    "raise SystemExit(main())",
+                _isolated_worker_command(
+                    "grid",
                     "--request",
                     str(request_file),
                     "--result",
                     str(receipt_file),
-                ],
+                ),
                 timeout=limit,
                 cwd=request_file.parent,
                 output_dir=result_file.parent,
