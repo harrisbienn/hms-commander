@@ -59,6 +59,51 @@ _LAUNCHER = (
     "p=subprocess.Popen(args,stdin=subprocess.DEVNULL); "
     "sys.exit(p.wait())"
 )
+_ISOLATED_WORKERS = {
+    "grid": ("HmsGridWriterWorker", "main"),
+    "flow-boundary": ("HmsFlowBoundaryWorker", "_child_main"),
+}
+_ISOLATED_PACKAGE_BOOTSTRAP = """
+import importlib.util
+import sys
+from pathlib import Path
+
+if any(name == 'hms_commander' or name.startswith('hms_commander.')
+       for name in sys.modules):
+    raise ImportError('HMS Commander was imported before worker bootstrap')
+package_directory = sys.argv.pop(1)
+spec = importlib.util.spec_from_file_location(
+    'hms_commander', Path(package_directory) / '__init__.py',
+    submodule_search_locations=[package_directory],
+)
+if spec is None or spec.loader is None:
+    raise ImportError('Cannot load the selected HMS Commander package')
+package = importlib.util.module_from_spec(spec)
+sys.modules['hms_commander'] = package
+spec.loader.exec_module(package)
+"""
+
+
+def _isolated_worker_command(worker: str, *arguments: str) -> list[str]:
+    """Bind a fixed child entry point to this package without changing sys.path."""
+    if worker not in _ISOLATED_WORKERS:
+        raise ValueError(f"Unsupported isolated HMS worker: {worker}")
+    module, entry = _ISOLATED_WORKERS[worker]
+    # Promoting a package root also promotes unrelated packages over the stdlib.
+    # Appending it can select a different installed owner. Load only our package.
+    bootstrap = (
+        _ISOLATED_PACKAGE_BOOTSTRAP
+        + f"from hms_commander.{module} import {entry}\n"
+        + f"raise SystemExit({entry}())\n"
+    )
+    return [
+        sys.executable,
+        "-I",
+        "-c",
+        bootstrap,
+        str(Path(__file__).resolve().parent),
+        *arguments,
+    ]
 
 
 def native_environment(additions=None):

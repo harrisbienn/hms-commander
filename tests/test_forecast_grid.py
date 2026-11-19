@@ -163,8 +163,8 @@ def owned_child(monkeypatch, native_io):
         result = Path(args[args.index("--result") + 1])
         assert "-I" in args
         assert (
-            repr(str(Path(api_module.__file__).resolve().parents[1]))
-            in args[args.index("-c") + 1]
+            Path(args[args.index("-c") + 2])
+            == Path(api_module.__file__).resolve().parent
         )
         assert kwargs["timeout"] > 0
         # A portable test of the existing child entry point, without launching Java.
