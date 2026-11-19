@@ -1,0 +1,20 @@
+{
+  "schema": "hms-commander/forecast-initialization/1.0",
+  "method": "static",
+  "disposition": "provisional-static",
+  "valid_at": "2019-09-18T13:00:00Z",
+  "model_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "engine_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "forcing_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+  "forcing_pathname": "/AORC/GRID/PRECIPITATION///INCREMENTAL/",
+  "clock": {
+    "physical_time_zone": "UTC",
+    "model_wall_time_zone": "UTC",
+    "forcing_time_zone": "UTC",
+    "time_shift": "none"
+  },
+  "warm_up": null,
+  "predecessor": null,
+  "observed_state_equivalent": false,
+  "forecast_eligible": false
+}

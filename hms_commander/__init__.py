@@ -90,6 +90,7 @@ from .HmsJython import HmsJython
 from .HmsCmdr import HmsCmdr
 from .HmsScenario import HmsScenario, HmsScenarioWorkspace, HmsRunArtifact
 from .HmsScenarioWorker import HmsScenarioWorker, HmsScenarioWorkerError
+from .HmsForecastInitialization import HmsForecastInitialization
 from .HmsTimeSeriesWorker import HmsTimeSeriesWorker, HmsTimeSeriesWorkerError
 from .HmsHandoffWorker import HmsHandoffWorker, HmsHandoffWorkerError
 from .HmsFlowBoundaryWorker import HmsFlowBoundaryWorker, HmsFlowBoundaryWorkerError
@@ -168,6 +169,7 @@ __all__ = [
     "HmsRunArtifact",
     "HmsScenarioWorker",
     "HmsScenarioWorkerError",
+    "HmsForecastInitialization",
     "HmsTimeSeriesWorker",
     "HmsTimeSeriesWorkerError",
     "HmsFlowBoundaryWorker",

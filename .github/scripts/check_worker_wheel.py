@@ -24,7 +24,12 @@ def main() -> None:
     contracts = importlib.resources.files("hms_commander").joinpath("contracts")
     required = {
         "scenario-worker-request-v1.3.schema.json",
+        "scenario-worker-request-v1.4.schema.json",
         "scenario-worker-result-v1.0.schema.json",
+        "scenario-worker-result-v1.1.schema.json",
+        "forecast-initialization-v1.0.schema.json",
+        "initialization-model-v1.0.schema.json",
+        "forecast-initialization-evidence-v1.0.schema.json",
         "timeseries-window-request-v1.0.schema.json",
         "timeseries-window-result-v1.0.schema.json",
         "hydrologic-handoff-request-v1.0.schema.json",
@@ -39,6 +44,8 @@ def main() -> None:
         if entry.name.endswith(".schema.json")
     }
     assert required <= schemas.keys(), required - schemas.keys()
+    assert callable(hms_commander.HmsForecastInitialization.prepare)
+    assert callable(hms_commander.HmsForecastInitialization.verify)
     forecast_schemas = {
         "grid-writer-request-v2.0.schema.json",
         "grid-writer-result-v2.0.schema.json",
